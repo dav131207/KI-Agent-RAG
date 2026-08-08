@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Local Qdrant storage
+qdrant_storage/
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Build artifacts
+build/
+dist/
+!frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Render/Fly local files
+.render*
+.fly*
+
+# Local rare pepe image collection
+backend/memes/*
+!backend/memes/.gitkeep

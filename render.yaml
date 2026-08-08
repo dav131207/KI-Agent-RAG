@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: professor-pepe-agent
+    runtime: docker
+    repo: https://github.com/dav131207/zen-ai-agent
+    plan: starter
+    region: oregon
+    healthCheckPath: /api/health
+    disk:
+      name: analytics-data
+      mountPath: /app/backend/data
+      sizeGB: 1
+    envVars:
+      - key: GEMINI_API_KEY
+        value: REPLACE_ME
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash-latest
+      - key: GEMINI_EMBEDDING_MODEL
+        value: models/gemini-embedding-001
+      - key: IMAGE_API_BASE
+        value: https://onlypepes.com
+      - key: QDRANT_URL
+        value: REPLACE_ME
+      - key: QDRANT_API_KEY
+        value: REPLACE_ME
+      - key: QDRANT_COLLECTION
+        value: professor_pepe
+      - key: WATERMARK_PATH
+        value: /app/backend/assets/watermark.png
+      - key: MEMES_DIR
+        value: /app/backend/memes
+      - key: PYTHONUNBUFFERED
+        value: "1"

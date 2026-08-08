@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  zen-ai-agent:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: zen-pepe-bot
+    ports:
+      - "8000:8000"
+    environment:
+      # Hier können alle API-Keys eingetragen werden
+      - LLM_PROVIDER=openai
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # - QDRANT_URL=...
+      # - QDRANT_API_KEY=...
+      # - ADMIN_TOKEN=...
+    # Hinweis: Da keine "volumes" gemountet sind, ist der Container 
+    # zu 100% von deinem Mac-Dateisystem isoliert.
+    restart: unless-stopped
