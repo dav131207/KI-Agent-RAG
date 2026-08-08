@@ -2,6 +2,8 @@
 
 A clean, animated web AI assistant powered by **Google Gemini**. Chat with Professor Pepe, request random memes, rare pepes, or social media posts.
 
+**Live Demo:** [https://professor-pepe-agent.onrender.com](https://professor-pepe-agent.onrender.com)
+
 ![stack](https://img.shields.io/badge/FastAPI-Python-green?logo=fastapi)
 ![stack](https://img.shields.io/badge/React-Vite-blue?logo=react)
 ![stack](https://img.shields.io/badge/Tailwind_CSS-38bdf8?logo=tailwindcss)
