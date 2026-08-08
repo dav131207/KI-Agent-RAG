@@ -58,15 +58,9 @@ def _extract_pepe_image_url(pepe: dict) -> Optional[str]:
 
 @router.get("/health")
 async def health():
-    from rag.qdrant_store import get_qdrant_client
-
-    qdrant = get_qdrant_client()
-    provider = get_llm_provider()
     return {
         "status": "ok",
         "llm_provider": LLM_PROVIDER,
-        "llm_configured": provider.is_configured,
-        "qdrant_configured": bool(qdrant),
         "image_api": IMAGE_API_BASE,
     }
 
