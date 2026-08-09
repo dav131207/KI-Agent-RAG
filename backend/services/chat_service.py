@@ -69,8 +69,12 @@ def build_contents(
                 system += (
                     "You are acting as a 'Broker' bridging the Pepe/Crypto cluster with the Public Sector/Govtech/Tech cluster. "
                     "Use the formula: 'What [specific Pepe/Counterparty historical detail] teaches us about [broad Tech/Public Sector problem]'. "
-                    "CRITICAL: Do NOT use any cashtags (like $PEP) or crypto-slang to prevent cluster-anchoring. "
-                    "Frame Pepe as a 10-year-old empirical case study for decentralization/provenance, not a meme."
+                    "CRITICAL CONSTRAINTS:\n"
+                    "1. Focus strictly on PROVENANCE (verifiable ownership history without a custodian). Do NOT claim Counterparty allows 'trustless micro-settlements' (it failed at settlement due to high fees and 10-minute block times).\n"
+                    "2. Remember that Counterparty is a metalayer over Bitcoin (data in OP_RETURN), not a UTXO-native issuance protocol.\n"
+                    "3. Do NOT force an 'AI' or 'machine-to-machine' angle. Frame it honestly as a 10-year-old empirical case study for the longevity of public registry data (which survived without API migrations or custodians).\n"
+                    "4. Use a highly precise, academic, and analytical tone. Acknowledge what failed (settlement) to build credibility for what worked (provenance).\n"
+                    "5. Do NOT use any cashtags (like $PEP) or crypto-slang to prevent cluster-anchoring."
                 )
             elif "mid-tier" in strategy or "reply" in strategy:
                 system += (
@@ -140,23 +144,24 @@ def build_contents(
     return contents
 
 
-def format_social_post(text: str, platform: str = "twitter") -> str:
-    """Normalize coin names to X/Twitter handles and ensure @PepecoinNetwork."""
+def format_social_post(text: str, platform: str = "twitter", strategy: str = "standard") -> str:
+    """Normalize coin names to X/Twitter handles and ensure @PepecoinNetwork only for standard posts."""
     text = (text or "").strip()
 
     if platform != "twitter":
         return text
 
-    text = re.sub(r"(?<!@)\bDogecoin\b", "@dogecoin", text, flags=re.IGNORECASE)
-    text = re.sub(r"(?<!@)\bLitecoin\b", "@litecoin", text, flags=re.IGNORECASE)
-    text = re.sub(r"(?<!@)\bBitcoin\b", "@Bitcoin", text, flags=re.IGNORECASE)
+    if strategy == "standard":
+        text = re.sub(r"(?<!@)\bDogecoin\b", "@dogecoin", text, flags=re.IGNORECASE)
+        text = re.sub(r"(?<!@)\bLitecoin\b", "@litecoin", text, flags=re.IGNORECASE)
+        text = re.sub(r"(?<!@)\bBitcoin\b", "@Bitcoin", text, flags=re.IGNORECASE)
 
-    handle = "@PepecoinNetwork"
-    if not re.search(r"@pepecoinnetwork\b", text, re.IGNORECASE):
-        suffix = " " + handle
-        if len(text) + len(suffix) > 280:
-            text = text[: max(0, 280 - len(suffix))].rstrip()
-        text = text + suffix
+        handle = "@PepecoinNetwork"
+        if not re.search(r"@pepecoinnetwork\b", text, re.IGNORECASE):
+            suffix = " " + handle
+            if len(text) + len(suffix) > 280:
+                text = text[: max(0, 280 - len(suffix))].rstrip()
+            text = text + suffix
 
     return text[:280]
 
@@ -229,7 +234,7 @@ async def generate_chat_response(
                     async for chunk in provider.stream(DEFAULT_MODEL, contents, temperature=0.9):
                         full += chunk
                     
-                    final_text = format_social_post(full, platform)
+                    final_text = format_social_post(full, platform, strategy)
 
                     # Auto-Meme Synergy for Standard Twitter strategy
                     if platform == "twitter" and strategy == "standard":
@@ -272,5 +277,8 @@ async def generate_chat_response(
     if is_social:
         platform_match = re.search(r"Platform:\s*(\w+)", message, re.IGNORECASE)
         platform = platform_match.group(1).lower() if platform_match else "twitter"
-        text = format_social_post(text, platform)
+        text = format_social_post(text, platform, getattr(req, "strategy", "standard"))  # In the non-stream case, strategy isn't easily parsed here yet, but standard is safe fallback. Let's parse it.
+        tonality_match = re.search(r"Tonality:\s*([\w\s-]+)\.", message, re.IGNORECASE)
+        strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
+        text = format_social_post(text, platform, strategy)
     return text
