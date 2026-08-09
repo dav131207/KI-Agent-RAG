@@ -235,7 +235,7 @@ async def generate_chat_response(
                 if is_social:
                     platform_match = re.search(r"Platform:\s*(\w+)", message, re.IGNORECASE)
                     platform = platform_match.group(1).lower() if platform_match else "twitter"
-                    tonality_match = re.search(r"Tonality:\s*([^.]+)\.", message, re.IGNORECASE)
+                    tonality_match = re.search(r"Tonality:\s*(.+?)\.\s*Topic", message, re.IGNORECASE)
                     strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
 
                     full = ""
@@ -321,8 +321,8 @@ async def generate_chat_response(
     if is_social:
         platform_match = re.search(r"Platform:\s*(\w+)", message, re.IGNORECASE)
         platform = platform_match.group(1).lower() if platform_match else "twitter"
-        text = format_social_post(text, platform, getattr(req, "strategy", "standard"))  # In the non-stream case, strategy isn't easily parsed here yet, but standard is safe fallback. Let's parse it.
-        tonality_match = re.search(r"Tonality:\s*([\w\s-]+)\.", message, re.IGNORECASE)
+        text = format_social_post(text, platform, getattr(req, "strategy", "standard"))
+        tonality_match = re.search(r"Tonality:\s*(.+?)\.\s*Topic", message, re.IGNORECASE)
         strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
         text = format_social_post(text, platform, strategy)
     return text
