@@ -307,13 +307,8 @@ async def generate_chat_response(
                 async for chunk in provider.stream(DEFAULT_MODEL, contents):
                     yield chunk
             except Exception as e:
-                track_event(
-                    client_ip=None,
-                    event_type="error",
-                    command="chat_stream",
-                    message=str(e)[:300],
-                )
-                yield "\n\n⚠️ Sorry fren, something went wrong generating this response. Please try again."
+                logger.error(f"Streaming error: {e}", exc_info=True)
+                yield f"\n\n⚠️ Sorry fren, something went wrong generating this response. Error: {str(e)}"
 
         return streamer()
 
