@@ -199,10 +199,21 @@ export default function Chat({ isDark }) {
     try {
       const wantsImage = /\b(show|image|picture|pic|photo|visual|draw|meme)\b/i.test(sendText)
       const isSocialCommand = /^create\s+a?\s*social\s+media\s+post/i.test(sendText)
+      // A mining/synergy post argues from network data, so it gets the live
+      // on-chain card instead of a random meme, which would undercut it.
+      const wantsChainCard =
+        isSocialCommand && /Tonality:\s*[^.]*\b(miner|synergy)\b/i.test(sendText)
 
-      // Social posts always include an image; explicit image searches use onlypepes.com.
       let imageUrl = null
-      if (wantsImage || isSocialCommand) {
+      if (wantsChainCard) {
+        // The card 503s when the explorer is down; probe the JSON endpoint
+        // first (same 60s cache, no image rendering) so a dead explorer leaves
+        // no broken image in the chat.
+        const chainOk = await fetch(`${API_BASE}/api/chain-stats`)
+          .then((r) => r.ok)
+          .catch(() => false)
+        imageUrl = chainOk ? `${API_BASE}/api/chain-stats.png?t=${Date.now()}` : null
+      } else if (wantsImage || isSocialCommand) {
         imageUrl = await fetchImage(sendText)
       }
 

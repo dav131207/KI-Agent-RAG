@@ -120,12 +120,16 @@ async def get_pepe_market_data(http_client: httpx.AsyncClient) -> str:
         # According to CoinGecko docs, demo keys use this header
         headers["x-cg-demo-api-key"] = COINGECKO_API_KEY
 
+    context_str = ""
+
+    # CoinGecko's free tier rate-limits aggressively on shared egress IPs. Its
+    # failure must not take the explorer data down with it, so it gets its own
+    # try block rather than wrapping the on-chain fetch below.
     try:
         r = await http_client.get(url, params=params, headers=headers)
         r.raise_for_status()
         data = r.json().get("pepecoin-network", {})
-        
-        context_str = ""
+
         if data:
             price = data.get("usd", 0)
             mc = data.get("usd_market_cap", 0)
@@ -140,6 +144,10 @@ async def get_pepe_market_data(http_client: httpx.AsyncClient) -> str:
                 f"- 24h Change: {change:+.2f}%\n"
             )
             
+    except Exception as e:
+        logger.error(f"Failed to fetch coingecko data: {e}")
+
+    try:
         # Fetch on-chain data from Pepeblocks (structured, shared with charts).
         chain = await get_pepe_chain_data(http_client)
         if chain:
@@ -168,8 +176,9 @@ async def get_pepe_market_data(http_client: httpx.AsyncClient) -> str:
             _cache["data"] = context_str
             _cache["time"] = now
             return context_str
-            
+
     except Exception as e:
-        logger.error(f"Failed to fetch coingecko data: {e}")
-        
+        logger.error(f"Failed to build on-chain context: {e}")
+
+
     return ""

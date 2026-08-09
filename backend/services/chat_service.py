@@ -9,8 +9,7 @@ from core.config import DEFAULT_MODEL, SYSTEM_PROMPT_PATH
 from core.providers import get_llm_provider
 from core.providers.base import LLMError
 from fastapi import HTTPException
-from services.chain_image_service import build_chain_stats_url
-from services.crypto_service import get_pepe_chain_data, get_pepe_market_data
+from services.crypto_service import get_pepe_market_data
 from core.http import http
 import logging
 
@@ -282,16 +281,10 @@ async def generate_chat_response(
                             meme_url = build_watermarked_url(base_url, ext_url, filename)
                             final_text += f"\n\n![Rare Pepe]({meme_url})"
                             
-                    # Auto-Chart Synergy for Miner Synergy strategy.
-                    # Numbers come straight from the explorer snapshot rather
-                    # than being regex-parsed back out of the prompt text.
-                    # Must match the prompt branch above, or a "synergy" post
-                    # gets the on-chain framing without the on-chain image.
-                    if platform == "twitter" and ("miner" in strategy or "synergy" in strategy):
-                        chain = await get_pepe_chain_data(http)
-                        chart_url = build_chain_stats_url(base_url, chain)
-                        if chart_url:
-                            final_text += f"\n\n![Pepecoin Network — live on-chain data]({chart_url})"
+                    # Miner/synergy posts get the live on-chain card, but the
+                    # client attaches it alongside the post rather than inlining
+                    # it here: the Twitter prompt forbids URLs in the post text,
+                    # and markdown pasted into X renders as literal noise.
 
                     yield final_text
                     return
