@@ -4,6 +4,8 @@ export const DEFAULT_LABELS = {
   rarepepe: 'Rare Pepe',
   social: 'Create Social Media Post',
   socialShort: 'Social Post',
+  breakalgo: 'Break the Algo',
+  breakalgoShort: 'Break Algo',
   communityart: 'Community Art',
   welcome: "Hello. I'm Professor Pepe, your AI agent. Type a command or choose one below.",
   placeholder: 'Type a command...',
@@ -16,6 +18,8 @@ export const LABELS = {
     rarepepe: 'Rare Pepe',
     social: 'Social Media Post erstellen',
     socialShort: 'Post erstellen',
+    breakalgo: 'Algorithmus knacken',
+    breakalgoShort: 'Algo knacken',
     communityart: 'Community Art',
     welcome: 'Hallo. Ich bin Professor Pepe, dein KI-Assistent. Tippe einen Befehl oder wähle unten einen aus.',
     placeholder: 'Befehl eingeben...',
@@ -185,5 +189,7 @@ export const LABELS = {
 }
 
 export function getLabels(language) {
-  return LABELS[language] || DEFAULT_LABELS
+  // Merged, not replaced: a translation that is missing a key would otherwise
+  // fall through to the raw command id in the UI.
+  return { ...DEFAULT_LABELS, ...(LABELS[language] || {}) }
 }

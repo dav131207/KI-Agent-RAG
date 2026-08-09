@@ -27,35 +27,91 @@ else:
     )
 
 
+def is_break_algo_command(message: str) -> bool:
+    """Detect the 'break the algo' command."""
+    return bool(re.match(r"^break\s+the\s+algo", (message or "").strip(), re.IGNORECASE))
+
+
 def is_social_command(message: str) -> bool:
-    """Detect the built-in 'create (a) social media post' command."""
+    """Detect either post-generating command; both produce a social post."""
+    message = (message or "").strip()
     return bool(
-        re.match(r"^create\s+a?\s*social\s+media\s+post", (message or "").strip(), re.IGNORECASE)
-    )
+        re.match(r"^create\s+a?\s*social\s+media\s+post", message, re.IGNORECASE)
+    ) or is_break_algo_command(message)
 
 
-def parse_social_params(message: str) -> tuple[str, str]:
+def parse_social_params(message: str) -> tuple[str, str, str]:
     """
-    Extract (platform, strategy) from a social-post command.
+    Extract (platform, strategy, post_format) from a post command.
 
-    Both the prompt builder and the post formatter must agree on the strategy,
-    so the parsing lives in one place instead of being re-derived per call site.
+    Every call site must agree on these, so the parsing lives in one place
+    instead of being re-derived per caller. "Tactic:" is the break-the-algo
+    spelling of "Tonality:".
     """
     message = message or ""
 
     platform_match = re.search(r"Platform:\s*(\w+)", message, re.IGNORECASE)
     platform = platform_match.group(1).lower() if platform_match else "twitter"
 
-    # Prefer the "Tonality: <x>. Topic" form; fall back to a trailing sentence.
-    tonality_match = re.search(r"Tonality:\s*(.+?)\.\s*Topic", message, re.IGNORECASE)
-    if not tonality_match:
-        tonality_match = re.search(r"Tonality:\s*([\w\s-]+)\.", message, re.IGNORECASE)
-    strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
+    # Prefer the "<label>: <x>. <next field>" form; fall back to a trailing
+    # sentence so a command without a following field still parses.
+    label = r"(?:Tonality|Tactic)"
+    match = re.search(rf"{label}:\s*(.+?)\.\s*(?:Format|Topic)", message, re.IGNORECASE)
+    if not match:
+        match = re.search(rf"{label}:\s*([\w\s-]+)\.", message, re.IGNORECASE)
+    strategy = (match.group(1).strip().lower() if match else "standard").replace(" ", "-")
 
-    return platform, strategy
+    format_match = re.search(r"Format:\s*(\w+)", message, re.IGNORECASE)
+    post_format = format_match.group(1).lower() if format_match else "thread"
+
+    return platform, strategy, post_format
 
 
 TWEET_LIMIT = 280
+
+# "Break the algo": tactics aimed at reach and replies rather than at a voice.
+# Kept apart from the tonalities so choosing a tone and choosing a growth tactic
+# stay separate decisions.
+ALGO_BASE_INSTRUCTION = (
+    "ALGORITHM MODE: This post is optimised for reach and replies. Engineer the first line to "
+    "stop the scroll, and give people a concrete reason to comment rather than just like. "
+    "Sound like a person with an opinion, never like marketing. "
+    "HARD RULES: stay factually honest — an intentionally provocative framing is fine, a false "
+    "claim is not. No financial advice, no price predictions, no promises of returns, and never "
+    "imply anyone will make money. Do not impersonate anyone and do not invent quotes, numbers "
+    "or endorsements."
+)
+
+# Keys must not be substrings of one another: "reply-bait" contains "bait", so
+# a "bait" key would swallow the Reply Bait tactic.
+ALGO_TACTICS = {
+    "correction": (
+        "TACTIC — BAIT CORRECTION (Cunningham's Law): State a confident take with one clear, "
+        "checkable weak spot that informed readers will want to correct. The weak spot must be a "
+        "matter of interpretation or emphasis, never a fabricated fact. Invite the correction "
+        "implicitly — do not write 'change my mind'."
+    ),
+    "contrarian": (
+        "TACTIC — CONTRARIAN TAKE: Argue a defensible minority position against the consensus in "
+        "this space. Give the strongest one-line reason for it and concede the best "
+        "counter-argument. The goal is a split room, not a pile-on."
+    ),
+    "reply": (
+        "TACTIC — REPLY BAIT: End on one specific, low-effort question anybody in the audience can "
+        "answer from their own experience. Avoid yes/no questions and avoid asking for opinions on "
+        "price. The question must follow from the post, not be bolted on."
+    ),
+    "rewatch": (
+        "TACTIC — REWATCH HOOK: Open with the payoff withheld — name the surprising outcome but "
+        "not the mechanism. Reveal the mechanism only at the very end, so the reader has to go "
+        "back to connect the two halves."
+    ),
+    "bubble": (
+        "TACTIC — BUBBLE BREAK: Write for an adjacent audience that is not already in crypto "
+        "(infrastructure, archives, public sector, gaming, open source). Lead with their problem, "
+        "not with the coin. Ban all crypto slang and cashtags; explain any term you cannot avoid."
+    ),
+}
 
 # Tone instructions for the non-Twitter platforms. The modal offers six
 # tonalities but only "shill" used to reach the prompt, so the other five
@@ -117,7 +173,7 @@ def build_contents(
         )
 
     if is_social_command(message):
-        platform, strategy = parse_social_params(message)
+        platform, strategy, post_format = parse_social_params(message)
 
         system += "\n\nYou are generating a social media post. "
 
@@ -200,9 +256,17 @@ def build_contents(
                     "Tell viewers to 'save this video' or 'share with a fren' to push it into the algorithm."
                 )
 
-        # Twitter picks a strategy rather than a tonality, so the tone block
-        # only applies to the platforms whose modal offers tonalities.
-        if platform != "twitter":
+        if is_break_algo_command(message):
+            # Growth tactics are their own command, so they stack on top of the
+            # platform formatting rules rather than replacing a tone.
+            system += "\n\n" + ALGO_BASE_INSTRUCTION
+            for tactic_key, instruction in ALGO_TACTICS.items():
+                if tactic_key in strategy:
+                    system += f"\n\n{instruction}"
+                    break
+        elif platform != "twitter":
+            # Twitter picks a strategy rather than a tonality, so the tone block
+            # only applies to the platforms whose modal offers tonalities.
             for tone_key, instruction in TONE_INSTRUCTIONS.items():
                 if tone_key in strategy:
                     system += f"\n\n{instruction}"
@@ -211,10 +275,20 @@ def build_contents(
         if platform == "twitter":
             system += (
                 f"\n\nHARD LIMIT: every single tweet must be at most {TWEET_LIMIT} characters, "
-                "counted including spaces, hashtags and handles. If the content does not fit, "
-                "split it into a numbered thread where each part is under the limit on its own. "
-                "Do not pad to reach the limit — shorter is fine."
+                "counted including spaces, hashtags and handles. Do not pad to reach the limit — "
+                "shorter is fine."
             )
+            if post_format == "single":
+                system += (
+                    " OUTPUT EXACTLY ONE POST. Do not write a thread, do not number anything, "
+                    f"and do not exceed {TWEET_LIMIT} characters in total. If the idea does not "
+                    "fit, cut the idea down rather than continuing into a second post."
+                )
+            else:
+                system += (
+                    " If the content does not fit one post, split it into a numbered thread "
+                    "(1/, 2/, ...) where each part is under the limit on its own."
+                )
 
     contents = [{"role": "user", "parts": [{"text": system}]}]
     for turn in history[-10:]:
@@ -259,7 +333,51 @@ def _hard_wrap(chunk: str, limit: int) -> list[str]:
     return out
 
 
-def enforce_tweet_limit(text: str, limit: int = TWEET_LIMIT) -> str:
+def compress_to_limit(text: str, limit: int = TWEET_LIMIT) -> str:
+    """
+    Ask the model to shorten an over-long single post.
+
+    Used when the author asked for one post rather than a thread: splitting
+    would ignore that choice and truncating would drop the ending, which is
+    usually where the point lands. Returns the original text if the rewrite
+    fails or comes back still too long, so the caller can surface the overrun.
+    """
+    excess = len(text) - limit
+    try:
+        provider = get_llm_provider()
+        if not provider.is_configured:
+            return text
+        result = provider.generate(
+            DEFAULT_MODEL,
+            [
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "text": (
+                                f"Shorten this social media post to at most {limit} characters "
+                                f"(it is currently {len(text)}, so cut at least {excess}). "
+                                "Keep the voice, the hook and the ending intact; drop supporting "
+                                "detail first. Reply with only the shortened post.\n\n"
+                                f"{text}"
+                            )
+                        }
+                    ],
+                }
+            ],
+        )
+        shortened = (result or "").strip()
+        if shortened and len(shortened) <= limit:
+            return shortened
+        logger.warning(
+            "Compression did not reach the limit (%s -> %s chars)", len(text), len(shortened)
+        )
+    except LLMError as e:
+        logger.warning(f"Could not compress post: {e}")
+    return text
+
+
+def enforce_tweet_limit(text: str, limit: int = TWEET_LIMIT, allow_thread: bool = True) -> str:
     """
     Guarantee every tweet fits the character limit.
 
@@ -267,10 +385,16 @@ def enforce_tweet_limit(text: str, limit: int = TWEET_LIMIT) -> str:
     constraint, and appending @PepecoinNetwork can push a compliant post over on
     its own. Over-long text is split into a numbered thread at sentence
     boundaries rather than truncated, so nothing is silently lost.
+
+    With allow_thread False the author asked for a single post, so the text is
+    compressed instead of split.
     """
     text = (text or "").strip()
     if not text:
         return text
+
+    if not allow_thread:
+        return text if len(text) <= limit else compress_to_limit(text, limit)
 
     # An existing thread is already split; leave it alone if every part fits.
     existing = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
@@ -309,7 +433,12 @@ def enforce_tweet_limit(text: str, limit: int = TWEET_LIMIT) -> str:
     return "\n\n".join(f"{i}/{total} {chunk}" for i, chunk in enumerate(chunks, 1))
 
 
-def format_social_post(text: str, platform: str = "twitter", strategy: str = "standard") -> str:
+def format_social_post(
+    text: str,
+    platform: str = "twitter",
+    strategy: str = "standard",
+    post_format: str = "thread",
+) -> str:
     """Normalize coin names to X/Twitter handles and ensure @PepecoinNetwork only for standard posts."""
     text = (text or "").strip()
 
@@ -328,7 +457,7 @@ def format_social_post(text: str, platform: str = "twitter", strategy: str = "st
 
     # Applied after the handle and coin substitutions, since both add characters
     # and can push an otherwise compliant post over the limit.
-    return enforce_tweet_limit(text)
+    return enforce_tweet_limit(text, allow_thread=post_format != "single")
 
 
 GET_COINS_TEXTS = {
@@ -390,13 +519,13 @@ async def generate_chat_response(
         async def streamer():
             try:
                 if is_social:
-                    platform, strategy = parse_social_params(message)
+                    platform, strategy, post_format = parse_social_params(message)
 
                     full = ""
                     async for chunk in provider.stream(DEFAULT_MODEL, contents, temperature=0.9):
                         full += chunk
                     
-                    final_text = format_social_post(full, platform, strategy)
+                    final_text = format_social_post(full, platform, strategy, post_format)
 
                     # Auto-Meme Synergy for Standard Twitter strategy
                     if platform == "twitter" and strategy == "standard":
@@ -437,6 +566,6 @@ async def generate_chat_response(
         raise HTTPException(status_code=e.status_code, detail=str(e))
 
     if is_social:
-        platform, strategy = parse_social_params(message)
-        text = format_social_post(text, platform, strategy)
+        platform, strategy, post_format = parse_social_params(message)
+        text = format_social_post(text, platform, strategy, post_format)
     return text
