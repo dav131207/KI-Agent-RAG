@@ -172,6 +172,7 @@ async def chat(req: ChatRequest, request: Request):
         context,
         language=target_language,
         stream=req.stream,
+        base_url=str(request.base_url),
     )
 
     if req.stream:

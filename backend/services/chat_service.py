@@ -60,13 +60,38 @@ def build_contents(
         platform = platform_match.group(1).lower() if platform_match else "twitter"
 
         system += "\n\nYou are generating a social media post. "
+        tonality_match = re.search(r"Tonality:\s*([\w\s-]+)\.", message, re.IGNORECASE)
+        strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
+
         if platform == "twitter":
-            system += (
-                "Keep the final text under 280 characters. "
-                "Always include @PepecoinNetwork, @dogecoin, @litecoin and @Bitcoin. "
-                "CRITICAL: Use ONLY 0 to 1 emojis maximum in the entire post. "
-                "CRITICAL: Be extremely creative. Use high variance in sentence structure, vocabulary, and angles. "
-            )
+            system += "Keep the final text under 280 characters. "
+            if "brokerage" in strategy:
+                system += (
+                    "You are acting as a 'Broker' bridging the Pepe/Crypto cluster with the Public Sector/Govtech/Tech cluster. "
+                    "Use the formula: 'What [specific Pepe/Counterparty historical detail] teaches us about [broad Tech/Public Sector problem]'. "
+                    "CRITICAL: Do NOT use any cashtags (like $PEP) or crypto-slang to prevent cluster-anchoring. "
+                    "Frame Pepe as a 10-year-old empirical case study for decentralization/provenance, not a meme."
+                )
+            elif "mid-tier" in strategy or "reply" in strategy:
+                system += (
+                    "You are replying to a tweet from a mid-tier account (10k-150k followers) in an adjacent tech/policy cluster. "
+                    "Add immense structural value or a unique 'Broker' perspective. "
+                    "Do not shill or act promotional. CRITICAL: Do NOT use any cashtags (like $PEP) or crypto-slang."
+                )
+            elif "engagement" in strategy:
+                system += (
+                    "Generate a post that ends with a structural or architectural question about Tech/Crypto to force replies from 'weak ties'. "
+                    "Focus on provoking a thoughtful discussion. CRITICAL: Do NOT use any cashtags (like $PEP)."
+                )
+            else:
+                # Standard (In-Cluster)
+                system += (
+                    "Always include @PepecoinNetwork, @dogecoin, @litecoin and @Bitcoin. "
+                    "Use relevant cashtags like $PEP. "
+                    "CRITICAL: Use ONLY 0 to 1 emojis maximum in the entire post. "
+                    "CRITICAL: Be extremely creative. Use high variance in sentence structure, vocabulary, and angles."
+                )
+
         elif platform == "reddit":
             system += (
                 "Format this as a subtle, organic Reddit text post (use markdown). "
@@ -80,6 +105,13 @@ def build_contents(
                 "CRITICAL: To prevent the user from copy-pasting the suggestions into the post, you MUST wrap the actual post text in a markdown blockquote (using >). "
                 "Then, UNDERNEATH the blockquote, suggest 2-3 highly relevant Subreddits where this post would perform best, formatted as: 'Suggested Subreddits: r/Subreddit1, r/Subreddit2'."
             )
+            if "shill" in strategy:
+                system += (
+                    "\n\nSHILL MODE ACTIVATED: Your goal is to hack the Reddit algorithm subtly. "
+                    "You must NOT sound like a marketer. Pose as a curious community member or skeptic. "
+                    "Write a slightly contrarian take or a 'stupid' question that forces people to correct you in the comments (Cunningham's Law). "
+                    "The goal is organic comment volume, which triggers the algorithm."
+                )
         elif platform == "tiktok":
             system += (
                 "Format this as a ready-to-post TikTok caption. "
@@ -88,26 +120,7 @@ def build_contents(
                 "Include a strong text hook at the very beginning. "
                 "Include viral hashtags like #Pepecoin #Crypto #Web3 and ask a question to drive comments."
             )
-            
-        system += "Follow the user's requested language, tonality, and topic exactly if provided."
-
-        if "shill" in message.lower():
-            if platform == "twitter":
-                system += (
-                    "\n\nSHILL MODE ACTIVATED: Your goal is to hack the Twitter algorithm based on network theory. "
-                    "Instead of just tagging mega-accounts that ignore notifications, you must build 'bridges' to adjacent networks. "
-                    "CRITICAL INSTRUCTION: Tag 2-3 mid-tier Web3/Crypto accounts, researchers, or adjacent niche leaders (e.g., AI, DeFi, NFTs) who actually engage. "
-                    "Structure the post to provoke a response from them (e.g., ask their opinion, challenge a thesis, or highlight a synergy). "
-                    "Tag them naturally to spark a high-engagement reply loop and maximize visibility."
-                )
-            elif platform == "reddit":
-                system += (
-                    "\n\nSHILL MODE ACTIVATED: Your goal is to hack the Reddit algorithm subtly. "
-                    "You must NOT sound like a marketer. Pose as a curious community member or skeptic. "
-                    "Write a slightly contrarian take or a 'stupid' question that forces people to correct you in the comments (Cunningham's Law). "
-                    "The goal is organic comment volume, which triggers the algorithm."
-                )
-            elif platform == "tiktok":
+            if "shill" in strategy:
                 system += (
                     "\n\nSHILL MODE ACTIVATED: Your goal is to hack the TikTok algorithm. "
                     "Optimize the caption to boost engagement (likes, shares, saves, and comments). "
@@ -191,6 +204,7 @@ async def generate_chat_response(
     context: str = "",
     language: Optional[str] = None,
     stream: bool = True,
+    base_url: str = "",
 ) -> AsyncGenerator[str, None] | str:
     """Generate a chat response, optionally streaming."""
     provider = get_llm()
@@ -208,10 +222,32 @@ async def generate_chat_response(
                 if is_social:
                     platform_match = re.search(r"Platform:\s*(\w+)", message, re.IGNORECASE)
                     platform = platform_match.group(1).lower() if platform_match else "twitter"
+                    tonality_match = re.search(r"Tonality:\s*([\w\s-]+)\.", message, re.IGNORECASE)
+                    strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
+
                     full = ""
                     async for chunk in provider.stream(DEFAULT_MODEL, contents, temperature=0.9):
                         full += chunk
-                    yield format_social_post(full, platform)
+                    
+                    final_text = format_social_post(full, platform)
+
+                    # Auto-Meme Synergy for Standard Twitter strategy
+                    if platform == "twitter" and strategy == "standard":
+                        from rag.qdrant_store import get_random_pepe_meme
+                        from api.routes import _extract_pepe_image_url
+                        from services.image_service import build_watermarked_url
+                        from pathlib import Path
+                        
+                        pepe = get_random_pepe_meme()
+                        if pepe:
+                            ext_url = _extract_pepe_image_url(pepe)
+                            filename = pepe.get("filename", "")
+                            if not filename and pepe.get("file_path"):
+                                filename = Path(pepe["file_path"]).name
+                            meme_url = build_watermarked_url(base_url, ext_url, filename)
+                            final_text += f"\n\n![Rare Pepe]({meme_url})"
+                    
+                    yield final_text
                     return
 
                 async for chunk in provider.stream(DEFAULT_MODEL, contents):

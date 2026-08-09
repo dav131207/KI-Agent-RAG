@@ -22,6 +22,13 @@ const TONALITIES = [
   { id: 'Philosophical', label: 'Philosophical', desc: 'Abstract thoughts on decentralization' }
 ]
 
+const TWITTER_STRATEGIES = [
+  { id: 'Standard', label: 'Standard (In-Cluster)', desc: 'Classic Pepe style with cashtags' },
+  { id: 'Brokerage', label: 'Brokerage (Cross-Cluster)', desc: 'Bridge Crypto history with Govtech/Tech. No cashtags' },
+  { id: 'Mid-Tier Reply', label: 'Mid-Tier Reply', desc: 'High-value reply to a specific tweet' },
+  { id: 'Engagement', label: 'Engagement (Weak Ties)', desc: 'Ask structural questions to provoke replies' }
+]
+
 export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
   const [step, setStep] = useState(0) // 0: Platform, 1: Lang, 2: Tone, 3: Topic
   
@@ -52,7 +59,8 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
     p.desc.toLowerCase().includes(search.toLowerCase())
   )
   const filteredLanguages = LANGUAGES.filter(l => l.toLowerCase().includes(search.toLowerCase()))
-  const filteredTonalities = TONALITIES.filter(t => 
+  const currentStrategies = platform === 'Twitter' ? TWITTER_STRATEGIES : TONALITIES
+  const filteredTonalities = currentStrategies.filter(t => 
     t.label.toLowerCase().includes(search.toLowerCase()) || 
     t.desc.toLowerCase().includes(search.toLowerCase())
   )
@@ -132,7 +140,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
             <span className={`${step >= 0 ? 'text-accent' : 'opacity-40'} transition-colors flex items-center gap-1.5`}><Globe size={12}/> Platform {platform && <span className="text-white normal-case ml-1 px-1.5 bg-accent/20 rounded">{platform}</span>}</span>
             <span className={`${step >= 1 ? 'text-accent' : 'opacity-40'} transition-colors flex items-center gap-1.5`}><Globe size={12}/> Language {language && <span className="text-white normal-case ml-1 px-1.5 bg-accent/20 rounded">{language}</span>}</span>
             {platform !== 'Reddit' && (
-              <span className={`${step >= 2 ? 'text-accent' : 'opacity-40'} transition-colors flex items-center gap-1.5`}><MessageSquare size={12}/> Tonality {tonality && <span className="text-white normal-case ml-1 px-1.5 bg-accent/20 rounded">{tonality}</span>}</span>
+              <span className={`${step >= 2 ? 'text-accent' : 'opacity-40'} transition-colors flex items-center gap-1.5`}><MessageSquare size={12}/> {platform === 'Twitter' ? 'Strategy' : 'Tonality'} {tonality && <span className="text-white normal-case ml-1 px-1.5 bg-accent/20 rounded">{tonality}</span>}</span>
             )}
             <span className={`${step >= 3 ? 'text-accent' : 'opacity-40'} transition-colors flex items-center gap-1.5`}><Hash size={12}/> Topic</span>
           </div>
@@ -151,7 +159,10 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
               placeholder={
                 step === 0 ? "Search platform..." : 
                 step === 1 ? "Search language..." : 
-                step === 2 && platform !== 'Reddit' ? "Search tonality..." : 
+                step === 2 && platform !== 'Reddit' ? (platform === 'Twitter' ? "Search strategy..." : "Search tonality...") : 
+                platform === 'Twitter' && tonality === 'Mid-Tier Reply' ? "Paste the tweet you want to reply to..." :
+                platform === 'Twitter' && tonality === 'Brokerage' ? "What tech/public sector topic should we bridge with Pepe?" :
+                platform === 'Twitter' && tonality === 'Engagement' ? "What structural topic should we ask about?" :
                 "What is this post about? (Press Enter to generate)"
               }
               className={`flex-1 bg-transparent text-lg outline-none font-medium placeholder:font-normal ${
