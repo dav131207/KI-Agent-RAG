@@ -26,7 +26,8 @@ const TWITTER_STRATEGIES = [
   { id: 'Standard', label: 'Standard (In-Cluster)', desc: 'Classic Pepe style with cashtags' },
   { id: 'Brokerage', label: 'Brokerage (Cross-Cluster)', desc: 'Bridge Crypto history with Govtech/Tech. No cashtags' },
   { id: 'Mid-Tier Reply', label: 'Mid-Tier Reply', desc: 'High-value reply to a specific tweet' },
-  { id: 'Engagement', label: 'Engagement (Weak Ties)', desc: 'Ask structural questions to provoke replies' }
+  { id: 'Engagement', label: 'Engagement (Weak Ties)', desc: 'Ask structural questions to provoke replies' },
+  { id: 'Miner Synergy', label: 'Miner Synergy (Dogecoin/Scrypt)', desc: 'Focus on PoW, UTXO, and Scrypt merged mining' }
 ]
 
 export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
@@ -163,6 +164,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
                 platform === 'Twitter' && tonality === 'Mid-Tier Reply' ? "Paste the tweet you want to reply to..." :
                 platform === 'Twitter' && tonality === 'Brokerage' ? "What tech/public sector topic should we bridge with Pepe?" :
                 platform === 'Twitter' && tonality === 'Engagement' ? "What structural topic should we ask about?" :
+                platform === 'Twitter' && tonality === 'Miner Synergy' ? "E.g. Hashrate, UTXO aging, Scrypt economics..." :
                 "What is this post about? (Press Enter to generate)"
               }
               className={`flex-1 bg-transparent text-lg outline-none font-medium placeholder:font-normal ${

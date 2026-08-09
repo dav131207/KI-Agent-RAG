@@ -64,16 +64,26 @@ def build_contents(
         strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
 
         if platform == "twitter":
-            system += "Keep the final text under 280 characters. "
+            system += "Format the post for Twitter. If it requires more than 280 characters, format it as a THREAD (e.g., 1/ ..., 2/ ...). "
             if "brokerage" in strategy:
                 system += (
                     "You are acting as a 'Broker' bridging the Pepe/Crypto cluster with the Public Sector/Govtech/Tech cluster. "
                     "CRITICAL CONSTRAINTS FOR THE TWEET:\n"
                     "1. NO BUZZWORDS: Ban words like 'cryptographic', 'trustless', 'decentralized', 'institutional auditability'. Use NO adjectives you cannot empirically prove.\n"
                     "2. BE SPECIFIC: You MUST explicitly say 'Rare Pepe on Counterparty (2016)'. Do NOT abstract it away. The contrast between meme collectors and serious data persistence is the hook.\n"
-                    "3. THE CORE THESIS: Focus entirely on 'Persistence without institutional carrier' (Persistenz ohne institutionellen Träger). Public registries fail due to format migrations, agency closures, and budgets, not cryptography. Rare Pepe survived 10 years without a database admin or budget.\n"
-                    "4. ADMIT FAILURE: Explicitly admit that this architecture failed at settlement (slow, expensive), but succeeded at provenance.\n"
-                    "5. Do NOT use any cashtags (like $PEP) or crypto-slang."
+                    "3. THE CORE THESIS: Focus entirely on 'Persistence without institutional carrier'. Public registries fail due to format migrations, agency closures, and budgets. Rare Pepe survived 10 years without a database admin or budget.\n"
+                    "4. CREDIBILITY & NUANCE: Do not say it 'proved' anything; say it 'shows' or 'is evidence of'. Acknowledge the 'catch': persistence rides on Bitcoin's economic incentive structure instead of a department budget. Also explicitly admit it failed at settlement (slow, expensive).\n"
+                    "5. Do NOT use any cashtags (like $PEP) or crypto-slang. End by inviting pushback from policy/tech experts."
+                )
+            elif "miner" in strategy or "synergy" in strategy:
+                system += (
+                    "You are generating a highly analytical post targeting the Dogecoin/Litecoin mining community and Cypherpunks. "
+                    "CRITICAL CONSTRAINTS:\n"
+                    "1. Focus strictly on the CATEGORY: Scrypt merged mining, UTXO economics, PoW, Hashrate, or Node distribution.\n"
+                    "2. Pepecoin is just the EXAMPlE, not the subject. Do not sound like an ad. No price talk, no 'next 100x'.\n"
+                    "3. USE DATA: Reference hashrate development, node numbers, or block times. Mention that Pepecoin shares the exact same physical miner base as Doge/Litecoin.\n"
+                    "4. ADMIT WEAKNESSES: Build credibility by admitting the limits of merged mining (e.g. 'borrowed hashrate').\n"
+                    "5. Use relevant hashtags/cashtags ($DOGE, $LTC, $PEP) but keep it academic and structural."
                 )
             elif "mid-tier" in strategy or "reply" in strategy:
                 system += (
@@ -158,11 +168,9 @@ def format_social_post(text: str, platform: str = "twitter", strategy: str = "st
         handle = "@PepecoinNetwork"
         if not re.search(r"@pepecoinnetwork\b", text, re.IGNORECASE):
             suffix = " " + handle
-            if len(text) + len(suffix) > 280:
-                text = text[: max(0, 280 - len(suffix))].rstrip()
             text = text + suffix
 
-    return text[:280]
+    return text
 
 
 GET_COINS_TEXTS = {
