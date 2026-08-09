@@ -65,6 +65,7 @@ def build_contents(
 
         if platform == "twitter":
             system += "Format the post for Twitter. If it requires more than 280 characters, format it as a THREAD (e.g., 1/ ..., 2/ ...). "
+            system += "CRITICAL: Do NOT include any external links (URLs) in the post text, as the X algorithm suppresses reach for external links. If a link is needed, write '(Link in the replies)' instead. "
             if "brokerage" in strategy:
                 system += (
                     "You are acting as a 'Broker' bridging the Pepe/Crypto cluster with the Public Sector/Govtech/Tech cluster. "
