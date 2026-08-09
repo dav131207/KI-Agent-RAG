@@ -2,7 +2,7 @@ services:
   - type: web
     name: professor-pepe-agent
     runtime: docker
-    repo: https://github.com/dav131207/zen-ai-agent
+    repo: https://github.com/dav131207/KI-Agent-RAG
     plan: starter
     region: oregon
     healthCheckPath: /api/health
