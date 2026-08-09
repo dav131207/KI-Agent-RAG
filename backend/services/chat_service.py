@@ -10,6 +10,9 @@ from core.providers.base import LLMError
 from fastapi import HTTPException
 from services.crypto_service import get_pepe_market_data
 from core.http import http
+import logging
+
+logger = logging.getLogger(__name__)
 
 if SYSTEM_PROMPT_PATH.exists():
     _system_prompt = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
