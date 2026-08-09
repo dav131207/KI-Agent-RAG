@@ -36,6 +36,54 @@ EXPLORER_HEADERS = {
 }
 
 
+# peppool.space is a mempool.space fork, not an iquidus explorer, so it needs
+# its own adapter. It is the only source for real block times, but it cannot
+# replace the explorers: /api/blocks returns just 10 blocks, and the mining
+# extension (/api/v1/mining/*) is disabled, so there is no hashrate figure and
+# no history. Deriving hashrate from 9 intervals lands ~80% off the explorer's
+# value, so block times are all that is taken from here.
+PEPPOOL_BASE = os.getenv("PEPPOOL_BASE", "https://peppool.space").rstrip("/")
+
+
+async def get_peppool_blocks(http_client: httpx.AsyncClient) -> dict[str, Any]:
+    """
+    Fetch recent block timing from peppool.space.
+
+    Returns block height, difficulty and the mean interval over the returned
+    window, or {} when unreachable.
+    """
+    try:
+        r = await http_client.get(
+            f"{PEPPOOL_BASE}/api/blocks", headers=EXPLORER_HEADERS, timeout=10
+        )
+        r.raise_for_status()
+        blocks = r.json()
+    except Exception as e:
+        logger.warning(f"peppool.space unavailable: {e}")
+        return {}
+
+    if not isinstance(blocks, list) or len(blocks) < 2:
+        return {}
+
+    stamps = [_as_int(b.get("timestamp")) for b in blocks]
+    stamps = [s for s in stamps if s is not None]
+    if len(stamps) < 2:
+        return {}
+
+    # The API returns newest first, so consecutive deltas run backwards.
+    gaps = [stamps[i] - stamps[i + 1] for i in range(len(stamps) - 1)]
+    gaps = [g for g in gaps if g >= 0]
+    if not gaps:
+        return {}
+
+    return {
+        "block_height": _as_int(blocks[0].get("height")),
+        "difficulty": _as_float(blocks[0].get("difficulty")),
+        "avg_block_time_s": sum(gaps) / len(gaps),
+        "block_time_sample": len(gaps),
+    }
+
+
 def _normalise_summary(summary: dict[str, Any]) -> dict[str, Any]:
     """
     Map an explorer's getsummary payload onto our field names.
@@ -92,20 +140,39 @@ async def get_pepe_chain_data(http_client: httpx.AsyncClient) -> dict[str, Any]:
             # Logged per host so the deployment's logs name the working mirror.
             logger.warning(f"Explorer {base} unavailable: {e}")
 
+    # peppool.space contributes block times regardless, and fills height and
+    # difficulty when every iquidus explorer is blocked. Its hashrate is not
+    # used: too few blocks to estimate one that agrees with the explorers.
+    explorer_source = source
+
+    peppool = await get_peppool_blocks(http_client)
+    if peppool:
+        for key in ("block_height", "difficulty"):
+            if snapshot.get(key) is None:
+                snapshot[key] = peppool.get(key)
+        snapshot["avg_block_time_s"] = peppool.get("avg_block_time_s")
+        snapshot["block_time_sample"] = peppool.get("block_time_sample")
+        source = f"{source}+{PEPPOOL_BASE}" if source else PEPPOOL_BASE
+
     if not snapshot:
-        logger.error(f"No explorer reachable (tried: {', '.join(EXPLORER_BASES)})")
+        logger.error(
+            f"No on-chain source reachable (tried: {', '.join(EXPLORER_BASES)}, {PEPPOOL_BASE})"
+        )
         return {}
 
     # pepeblocks omits peers from getsummary; fetch it separately when missing.
-    if snapshot.get("connection_count") is None:
+    # Only iquidus hosts serve this route, so skip it when peppool is all we got.
+    if snapshot.get("connection_count") is None and explorer_source:
         try:
             r_peers = await http_client.get(
-                f"{source}/api/getconnectioncount", headers=EXPLORER_HEADERS, timeout=10
+                f"{explorer_source}/api/getconnectioncount",
+                headers=EXPLORER_HEADERS,
+                timeout=10,
             )
             if r_peers.status_code == 200:
                 snapshot["connection_count"] = _as_int(r_peers.text.strip())
         except Exception as e:
-            logger.warning(f"Failed to fetch connection count from {source}: {e}")
+            logger.warning(f"Failed to fetch connection count from {explorer_source}: {e}")
 
     snapshot["source"] = source
     logger.info(f"On-chain snapshot from {source}")
@@ -205,6 +272,11 @@ async def get_pepe_market_data(http_client: httpx.AsyncClient) -> str:
                 context_str += f"- Difficulty: {chain['difficulty']:,.0f}\n"
             if chain.get("hashrate_ths") is not None:
                 context_str += f"- Hashrate: {chain['hashrate_ths']:,.2f} TH/s\n"
+            if chain.get("avg_block_time_s") is not None:
+                context_str += (
+                    f"- Average Block Time: {chain['avg_block_time_s']:.0f}s "
+                    f"(last {chain.get('block_time_sample', '?')} blocks, from peppool.space)\n"
+                )
             if chain.get("connection_count") is not None:
                 context_str += f"- Connected Peers (explorer node): {chain['connection_count']}\n"
             if chain.get("supply") is not None:

@@ -59,6 +59,22 @@ def _fit_font(draw: ImageDraw.ImageDraw, text: str, max_w: int, size: int, bold:
     return _font(18, bold=bold)
 
 
+def _source_label(chain: dict[str, Any]) -> str:
+    """
+    Name the hosts the data actually came from.
+
+    The snapshot may be stitched from an explorer plus peppool.space, so the
+    card must not claim a single fixed source.
+    """
+    raw = chain.get("source") or ""
+    hosts = [
+        part.split("://")[-1].strip("/")
+        for part in raw.split("+")
+        if part.strip()
+    ]
+    return " · ".join(hosts) if hosts else "on-chain"
+
+
 def _fmt_int(value: Optional[float]) -> str:
     return f"{int(value):,}" if value is not None else "n/a"
 
@@ -87,20 +103,31 @@ def render_chain_stats_card(chain: dict[str, Any]) -> Optional[bytes]:
     f_foot = _font(22)
 
     draw.text((56, 44), "PEPECOIN NETWORK", font=f_title, fill=INK_PRIMARY)
-    draw.text((56, 92), "Live on-chain data · pepeblocks.com", font=f_label, fill=INK_MUTED)
+    draw.text((56, 92), f"Live on-chain data · {_source_label(chain)}", font=f_label, fill=INK_MUTED)
 
     # Headline metric: network hashrate.
-    hero = format_hashrate(chain.get("hashrate_ths"))
-    draw.text((56, 168), "NETWORK HASHRATE", font=f_label, fill=INK_MUTED)
+    # Hashrate only comes from the iquidus explorers. When those are blocked,
+    # block height leads instead, so the card never headlines an "n/a".
+    if chain.get("hashrate_ths") is not None:
+        hero_label, hero = "NETWORK HASHRATE", format_hashrate(chain["hashrate_ths"])
+    else:
+        hero_label, hero = "BLOCK HEIGHT", _fmt_int(chain.get("block_height"))
+
+    draw.text((56, 168), hero_label, font=f_label, fill=INK_MUTED)
     draw.text((56, 204), hero, font=_fit_font(draw, hero, CARD_W - 112, 96), fill=ACCENT)
 
     # Supporting metrics, each in its own unit — deliberately not co-plotted.
+    block_time = chain.get("avg_block_time_s")
     stats = [
-        ("BLOCK HEIGHT", _fmt_int(chain.get("block_height"))),
         ("DIFFICULTY", _fmt_int(chain.get("difficulty"))),
-        ("PEERS", _fmt_int(chain.get("connection_count"))),
-        ("SUPPLY", _fmt_supply(chain.get("supply"))),
+        ("BLOCK TIME", f"{block_time:.0f}s" if block_time else "n/a"),
     ]
+    # Whichever metric is not already the headline fills the remaining tiles.
+    if hero_label == "BLOCK HEIGHT":
+        stats.append(("PEERS", _fmt_int(chain.get("connection_count"))))
+    else:
+        stats.insert(0, ("BLOCK HEIGHT", _fmt_int(chain.get("block_height"))))
+    stats.append(("SUPPLY", _fmt_supply(chain.get("supply"))))
 
     margin, gap, box_h, top = 56, 16, 132, 350
     pad = 20
