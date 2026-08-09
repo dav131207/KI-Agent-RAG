@@ -55,6 +55,40 @@ def parse_social_params(message: str) -> tuple[str, str]:
     return platform, strategy
 
 
+TWEET_LIMIT = 280
+
+# Tone instructions for the non-Twitter platforms. The modal offers six
+# tonalities but only "shill" used to reach the prompt, so the other five
+# produced a byte-identical request and the tone never changed.
+TONE_INSTRUCTIONS = {
+    "humorous": (
+        "TONE — HUMOROUS: Write with dry, self-aware meme humour. Land the joke through "
+        "understatement and specific absurd detail, not exclamation marks. One good joke beats "
+        "three weak ones. Never explain the joke, and never use 'lol' or laughing emojis."
+    ),
+    "professional": (
+        "TONE — PROFESSIONAL: Direct, factual, sober. No hype words ('massive', 'insane', 'huge'), "
+        "no emojis, no exclamation marks. Make claims you can support and attribute numbers to "
+        "their source. Short declarative sentences."
+    ),
+    "hype": (
+        "TONE — HYPE: High energy and bullish about the technology and the community. Keep it "
+        "about momentum, building and participation — never about price targets, returns, or "
+        "predictions, and never imply anyone will make money."
+    ),
+    "educational": (
+        "TONE — EDUCATIONAL: Explain the mechanism so a curious outsider follows it. Define each "
+        "technical term the first time it appears. Lead with the concept, use Pepecoin only as the "
+        "worked example. No marketing language and no call to action."
+    ),
+    "philosophical": (
+        "TONE — PHILOSOPHICAL: Reflective and abstract, about decentralisation, trust and "
+        "permanence. Pose the question rather than answering it. No cashtags, no price talk, no "
+        "promotion — the reader should leave thinking, not buying."
+    ),
+}
+
+
 def build_contents(
     topic: str,
     message: str,
@@ -166,6 +200,22 @@ def build_contents(
                     "Tell viewers to 'save this video' or 'share with a fren' to push it into the algorithm."
                 )
 
+        # Twitter picks a strategy rather than a tonality, so the tone block
+        # only applies to the platforms whose modal offers tonalities.
+        if platform != "twitter":
+            for tone_key, instruction in TONE_INSTRUCTIONS.items():
+                if tone_key in strategy:
+                    system += f"\n\n{instruction}"
+                    break
+
+        if platform == "twitter":
+            system += (
+                f"\n\nHARD LIMIT: every single tweet must be at most {TWEET_LIMIT} characters, "
+                "counted including spaces, hashtags and handles. If the content does not fit, "
+                "split it into a numbered thread where each part is under the limit on its own. "
+                "Do not pad to reach the limit — shorter is fine."
+            )
+
     contents = [{"role": "user", "parts": [{"text": system}]}]
     for turn in history[-10:]:
         role = turn.get("role")
@@ -176,6 +226,87 @@ def build_contents(
             contents.append({"role": "model", "parts": [{"text": text}]})
     contents.append({"role": "user", "parts": [{"text": message}]})
     return contents
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Break text into sentences, keeping their terminating punctuation."""
+    parts = re.split(r"(?<=[.!?])\s+", text.replace("\n", " "))
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _hard_wrap(chunk: str, limit: int) -> list[str]:
+    """Break an over-long sentence at word boundaries as a last resort."""
+    out: list[str] = []
+    current = ""
+    for word in chunk.split():
+        # A single token can exceed the limit on its own (a long URL or hashtag
+        # chain), and no word boundary will save it — cut it by characters.
+        if len(word) > limit:
+            if current:
+                out.append(current)
+                current = ""
+            out.extend(word[i : i + limit] for i in range(0, len(word), limit))
+            continue
+        candidate = f"{current} {word}".strip()
+        if len(candidate) <= limit:
+            current = candidate
+        else:
+            if current:
+                out.append(current)
+            current = word
+    if current:
+        out.append(current)
+    return out
+
+
+def enforce_tweet_limit(text: str, limit: int = TWEET_LIMIT) -> str:
+    """
+    Guarantee every tweet fits the character limit.
+
+    The prompt asks the model to stay under it, but a prompt is a request, not a
+    constraint, and appending @PepecoinNetwork can push a compliant post over on
+    its own. Over-long text is split into a numbered thread at sentence
+    boundaries rather than truncated, so nothing is silently lost.
+    """
+    text = (text or "").strip()
+    if not text:
+        return text
+
+    # An existing thread is already split; leave it alone if every part fits.
+    existing = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if len(existing) > 1 and all(len(p) <= limit for p in existing):
+        return text
+    if len(existing) == 1 and len(text) <= limit:
+        return text
+
+    # Reserve room for the "12/34 " prefix added below.
+    budget = limit - 7
+    chunks: list[str] = []
+    current = ""
+    for sentence in _split_sentences(text):
+        if len(sentence) > budget:
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.extend(_hard_wrap(sentence, budget))
+            continue
+        candidate = f"{current} {sentence}".strip()
+        if len(candidate) <= budget:
+            current = candidate
+        else:
+            if current:
+                chunks.append(current)
+            current = sentence
+    if current:
+        chunks.append(current)
+
+    if len(chunks) == 1 and len(chunks[0]) <= limit:
+        return chunks[0]
+    if not chunks:
+        return text
+
+    total = len(chunks)
+    return "\n\n".join(f"{i}/{total} {chunk}" for i, chunk in enumerate(chunks, 1))
 
 
 def format_social_post(text: str, platform: str = "twitter", strategy: str = "standard") -> str:
@@ -195,7 +326,9 @@ def format_social_post(text: str, platform: str = "twitter", strategy: str = "st
             suffix = " " + handle
             text = text + suffix
 
-    return text
+    # Applied after the handle and coin substitutions, since both add characters
+    # and can push an otherwise compliant post over the limit.
+    return enforce_tweet_limit(text)
 
 
 GET_COINS_TEXTS = {
