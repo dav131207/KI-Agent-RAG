@@ -88,7 +88,7 @@ def build_contents(
         system += "\n\nYou are generating a social media post. "
 
         if platform == "twitter":
-            system += "Format the post for Twitter. If it requires more space than a single tweet, format it as a THREAD (e.g., 1/ ..., 2/ ...). Keep each part very concise. "
+            system += "Format the post for Twitter. If it requires more space than a single tweet which consists of 280 signs, format it as a THREAD (e.g., 1/ ..., 2/ ...). Keep each part very concise. "
             system += "Do NOT include any external links (URLs) in the post text, as the X algorithm suppresses reach for external links. If a link is needed, write '(Link in the replies)' instead. "
             if "brokerage" in strategy:
                 system += (
