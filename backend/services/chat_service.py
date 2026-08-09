@@ -235,7 +235,7 @@ async def generate_chat_response(
                 if is_social:
                     platform_match = re.search(r"Platform:\s*(\w+)", message, re.IGNORECASE)
                     platform = platform_match.group(1).lower() if platform_match else "twitter"
-                    tonality_match = re.search(r"Tonality:\s*([\w\s-]+)\.", message, re.IGNORECASE)
+                    tonality_match = re.search(r"Tonality:\s*([^.]+)\.", message, re.IGNORECASE)
                     strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
 
                     full = ""
