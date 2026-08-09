@@ -64,8 +64,8 @@ def build_contents(
         strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
 
         if platform == "twitter":
-            system += "Format the post for Twitter. If it requires more than 280 characters, format it as a THREAD (e.g., 1/ ..., 2/ ...). "
-            system += "CRITICAL: Do NOT include any external links (URLs) in the post text, as the X algorithm suppresses reach for external links. If a link is needed, write '(Link in the replies)' instead. "
+            system += "CRITICAL CONSTRAINT: Your entire post MUST be strictly UNDER 280 CHARACTERS. Count your characters carefully! If the topic absolutely requires more space, you MUST format it as a numbered Twitter Thread (e.g., '1/ [tweet under 280 chars]' \n\n '2/ [tweet under 280 chars]'). Do NOT output a single block of text over 280 characters! "
+            system += "Also, do NOT include any external links (URLs) in the post text, as the X algorithm suppresses reach for external links. If a link is needed, write '(Link in the replies)' instead. "
             if "brokerage" in strategy:
                 system += (
                     "You are acting as a 'Broker' bridging the Pepe/Crypto cluster with the Public Sector/Govtech/Tech cluster. "
