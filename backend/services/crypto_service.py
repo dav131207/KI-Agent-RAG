@@ -1,5 +1,6 @@
 """Crypto market data service for Professor Pepe."""
 
+import os
 import time
 import logging
 from typing import Any, Optional
@@ -17,15 +18,54 @@ _cache: dict[str, float | str] = {}
 # callers that need numbers do not have to parse the prompt text back apart.
 _chain_cache: dict[str, Any] = {}
 
-PEPEBLOCKS_BASE = "https://pepeblocks.com"
+# Every known Pepecoin explorer sits behind Cloudflare, which rejects requests
+# from datacenter IPs on some sites but not others. One host being blocked from
+# a given deployment says nothing about the next, so they are tried in order.
+# Override with PEPE_EXPLORERS (comma-separated) to add or reorder mirrors.
+DEFAULT_EXPLORERS = "https://pepeblocks.com,https://pepeplorer.com"
+EXPLORER_BASES = [
+    host.strip().rstrip("/")
+    for host in os.getenv("PEPE_EXPLORERS", DEFAULT_EXPLORERS).split(",")
+    if host.strip()
+]
+
+# Identify the caller instead of sending httpx's default agent.
+EXPLORER_HEADERS = {
+    "User-Agent": "ProfessorPepe/1.0 (+https://github.com/dav131207/KI-Agent-RAG)",
+    "Accept": "application/json",
+}
+
+
+def _normalise_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    """
+    Map an explorer's getsummary payload onto our field names.
+
+    Iquidus forks disagree on key names: pepeblocks uses last_price_usd and
+    exposes peers on a separate endpoint, pepeplorer uses lastUSDPrice and
+    inlines connections. Both spellings are accepted.
+    """
+    hashrate_hs = _as_float(summary.get("hashrate"))
+    price = summary.get("last_price_usd")
+    if price is None:
+        price = summary.get("lastUSDPrice", summary.get("lastPrice"))
+
+    return {
+        "block_height": _as_int(summary.get("blockcount")),
+        "difficulty": _as_float(summary.get("difficulty")),
+        "supply": _as_float(summary.get("supply")),
+        "hashrate_hs": hashrate_hs,
+        "hashrate_ths": hashrate_hs / 1e12 if hashrate_hs is not None else None,
+        "price_usd": _as_float(price),
+        "connection_count": _as_int(summary.get("connections")),
+    }
 
 
 async def get_pepe_chain_data(http_client: httpx.AsyncClient) -> dict[str, Any]:
     """
-    Fetch a structured on-chain snapshot from the Pepeblocks explorer.
+    Fetch a structured on-chain snapshot from the first explorer that answers.
 
     Returns raw numbers (not formatted strings) so chart builders and the prompt
-    formatter share one source of truth. Returns {} when the explorer is down.
+    formatter share one source of truth. Returns {} when every explorer fails.
     """
     now = time.time()
     cached = _chain_cache.get("data")
@@ -34,34 +74,41 @@ async def get_pepe_chain_data(http_client: httpx.AsyncClient) -> dict[str, Any]:
         return cached
 
     snapshot: dict[str, Any] = {}
+    source: Optional[str] = None
 
-    try:
-        r = await http_client.get(f"{PEPEBLOCKS_BASE}/ext/getsummary", timeout=10)
-        r.raise_for_status()
-        summary = r.json()
+    for base in EXPLORER_BASES:
+        try:
+            r = await http_client.get(
+                f"{base}/ext/getsummary", headers=EXPLORER_HEADERS, timeout=10
+            )
+            r.raise_for_status()
+            candidate = _normalise_summary(r.json())
+            if candidate.get("hashrate_ths") is None:
+                logger.warning(f"Explorer {base} returned no hashrate; trying next")
+                continue
+            snapshot, source = candidate, base
+            break
+        except Exception as e:
+            # Logged per host so the deployment's logs name the working mirror.
+            logger.warning(f"Explorer {base} unavailable: {e}")
 
-        hashrate_hs = _as_float(summary.get("hashrate"))
-        snapshot.update(
-            {
-                "block_height": _as_int(summary.get("blockcount")),
-                "difficulty": _as_float(summary.get("difficulty")),
-                "supply": _as_float(summary.get("supply")),
-                "hashrate_hs": hashrate_hs,
-                "hashrate_ths": hashrate_hs / 1e12 if hashrate_hs is not None else None,
-                "price_usd": _as_float(summary.get("last_price_usd")),
-            }
-        )
-    except Exception as e:
-        logger.error(f"Failed to fetch pepeblocks summary: {e}")
+    if not snapshot:
+        logger.error(f"No explorer reachable (tried: {', '.join(EXPLORER_BASES)})")
         return {}
 
-    # Peer count backs the "node distribution" angle in miner-synergy posts.
-    try:
-        r_peers = await http_client.get(f"{PEPEBLOCKS_BASE}/api/getconnectioncount", timeout=10)
-        if r_peers.status_code == 200:
-            snapshot["connection_count"] = _as_int(r_peers.text.strip())
-    except Exception as e:
-        logger.warning(f"Failed to fetch pepeblocks connection count: {e}")
+    # pepeblocks omits peers from getsummary; fetch it separately when missing.
+    if snapshot.get("connection_count") is None:
+        try:
+            r_peers = await http_client.get(
+                f"{source}/api/getconnectioncount", headers=EXPLORER_HEADERS, timeout=10
+            )
+            if r_peers.status_code == 200:
+                snapshot["connection_count"] = _as_int(r_peers.text.strip())
+        except Exception as e:
+            logger.warning(f"Failed to fetch connection count from {source}: {e}")
+
+    snapshot["source"] = source
+    logger.info(f"On-chain snapshot from {source}")
 
     _chain_cache["data"] = snapshot
     _chain_cache["time"] = now
