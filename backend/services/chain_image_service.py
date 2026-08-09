@@ -124,10 +124,3 @@ def render_chain_stats_card(chain: dict[str, Any]) -> Optional[bytes]:
     buf = BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
-
-
-def build_chain_stats_url(base_url: str, chain: dict[str, Any]) -> Optional[str]:
-    """Return the URL of the live stat card, or None when no data is available."""
-    if not chain or chain.get("hashrate_ths") is None:
-        return None
-    return f"{base_url}api/chain-stats.png"
