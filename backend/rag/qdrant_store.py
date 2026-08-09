@@ -9,6 +9,7 @@ Supports both Qdrant Cloud and local Qdrant instances.
 import hashlib
 import os
 import random
+import uuid
 from pathlib import Path
 from typing import List, Optional
 
@@ -173,6 +174,17 @@ def _chunk_id(text: str, source: str) -> str:
     return hashlib.sha256(f"{source}:{text}".encode("utf-8")).hexdigest()[:16]
 
 
+def _point_id(text: str, source: str) -> str:
+    """
+    Derive a deterministic Qdrant point id from the chunk content.
+
+    Qdrant only accepts unsigned integers or UUIDs as ids, so the content hash
+    is folded into a UUID. Re-ingesting the same source overwrites the existing
+    points instead of appending duplicates.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{source}:{text}"))
+
+
 def ingest_text(text: str, source: str = "manual", chunk_size: int = 500, chunk_overlap: int = 50) -> int:
     """Split text into semantic chunks, embed them and store in Qdrant."""
     client = get_qdrant_client()
@@ -187,10 +199,9 @@ def ingest_text(text: str, source: str = "manual", chunk_size: int = 500, chunk_
     if embeddings is None:
         return 0
 
-    existing_count = client.count(collection_name=QDRANT_COLLECTION).count
     points = [
         PointStruct(
-            id=existing_count + i,
+            id=_point_id(chunks[i], source),
             vector=embeddings[i],
             payload={
                 "text": chunks[i],
@@ -283,6 +294,8 @@ def get_random_pepe_meme(max_attempts: int = 10) -> Optional[dict]:
         if total == 0:
             return None
 
+        # Fast path: the ingest scripts assign sequential ids, so a direct
+        # lookup usually hits without scanning the collection.
         for _ in range(max_attempts):
             random_id = random.randint(0, total - 1)
             records = client.retrieve(
@@ -294,6 +307,25 @@ def get_random_pepe_meme(max_attempts: int = 10) -> Optional[dict]:
                 payload = record.payload
                 if payload and payload.get("is_politically_sensitive") is False:
                     return payload
+
+        # Fallback: ids are sparse (points deleted, or ingested with UUIDs),
+        # so sample from an actual page of the collection instead.
+        points, _ = client.scroll(
+            collection_name=PEPE_MEMES_COLLECTION,
+            with_payload=True,
+            limit=256,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="is_politically_sensitive",
+                        match=MatchValue(value=False),
+                    )
+                ]
+            ),
+        )
+        candidates = [p.payload for p in points if p.payload]
+        if candidates:
+            return random.choice(candidates)
     except Exception:
         pass
 

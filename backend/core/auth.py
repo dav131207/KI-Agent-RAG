@@ -1,5 +1,7 @@
 """Authentication utilities for admin endpoints."""
 
+import hmac
+
 from fastapi import HTTPException, status
 from core.config import ADMIN_TOKEN
 
@@ -8,7 +10,8 @@ def verify_admin_token(token: str) -> bool:
     """Verify that the provided token matches the admin token."""
     if not ADMIN_TOKEN:
         return False
-    return token == ADMIN_TOKEN
+    # Constant-time comparison so response timing does not leak the token.
+    return hmac.compare_digest(token, ADMIN_TOKEN)
 
 
 def check_admin_auth(authorization_header: str = None) -> bool:
@@ -32,3 +35,5 @@ def check_admin_auth(authorization_header: str = None) -> bool:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
         )
+
+    return True

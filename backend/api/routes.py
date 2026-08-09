@@ -24,7 +24,9 @@ from api.schemas import (
 from core.config import IMAGE_API_BASE, LLM_PROVIDER, MEMES_DIR
 from core.http import http
 from core.providers import get_llm_provider
+from services.chain_image_service import render_chain_stats_card
 from services.chat_service import GET_COINS_TEXTS, generate_chat_response, is_social_command
+from services.crypto_service import get_pepe_chain_data
 from services.emote_service import emote_files, pick_emote
 from services.image_service import (
     ALLOWED_IMAGE_PREFIXES,
@@ -256,6 +258,30 @@ async def fetch_rare_pepe(req: RarePepeRequest, request: Request):
         "explanation": explanation,
         "language": target_language,
     }
+
+
+@router.get("/chain-stats")
+async def chain_stats():
+    """Return the live on-chain snapshot from the Pepeblocks explorer."""
+    chain = await get_pepe_chain_data(http)
+    if not chain:
+        raise HTTPException(status_code=503, detail="Explorer unavailable")
+    return chain
+
+
+@router.get("/chain-stats.png")
+async def chain_stats_image():
+    """Render the live on-chain snapshot as a stat card image for social posts."""
+    chain = await get_pepe_chain_data(http)
+    png = render_chain_stats_card(chain)
+    if png is None:
+        raise HTTPException(status_code=503, detail="Explorer unavailable")
+    return Response(
+        content=png,
+        media_type="image/png",
+        # Matches the 60s explorer cache so shared posts stay reasonably fresh.
+        headers={"Cache-Control": "public, max-age=60"},
+    )
 
 
 @router.get("/watermark")

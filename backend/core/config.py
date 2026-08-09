@@ -23,7 +23,17 @@ WATERMARK_PATH = os.getenv(
     "WATERMARK_PATH",
     str(BACKEND_DIR / "assets" / "watermark.png"),
 )
-MEMES_DIR = Path(os.getenv("MEMES_DIR", "")).expanduser() if os.getenv("MEMES_DIR") else None
+
+def _resolve_memes_dir() -> Path | None:
+    """Resolve MEMES_DIR against the backend directory so it survives a cwd change."""
+    raw = os.getenv("MEMES_DIR", "")
+    if not raw:
+        return None
+    path = Path(raw).expanduser()
+    return path if path.is_absolute() else (BACKEND_DIR / path).resolve()
+
+
+MEMES_DIR = _resolve_memes_dir()
 
 QDRANT_URL = os.getenv("QDRANT_URL", "")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
