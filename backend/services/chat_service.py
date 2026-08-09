@@ -259,6 +259,47 @@ async def generate_chat_response(
                                 filename = Path(pepe["file_path"]).name
                             meme_url = build_watermarked_url(base_url, ext_url, filename)
                             final_text += f"\n\n![Rare Pepe]({meme_url})"
+                            
+                    # Auto-Chart Synergy for Miner Synergy strategy
+                    if platform == "twitter" and "miner" in strategy:
+                        import urllib.parse
+                        import json
+                        
+                        hr_ths = 0.0
+                        hr_match = re.search(r"Hashrate: ([\d,\.]+) TH/s", context)
+                        if hr_match:
+                            try:
+                                hr_ths = float(hr_match.group(1).replace(",", ""))
+                            except ValueError:
+                                pass
+                                
+                        if hr_ths > 0:
+                            domain_max = 5000 if hr_ths < 5000 else 10000
+                            hr_str = f"{hr_ths / 1000:.2f} PH/s" if hr_ths > 1000 else f"{hr_ths:.0f} TH/s"
+                            
+                            chart_config = {
+                              "type": "radialGauge",
+                              "data": {
+                                "datasets": [{
+                                  "data": [hr_ths],
+                                  "backgroundColor": "#00ff00",
+                                  "borderWidth": 0
+                                }]
+                              },
+                              "options": {
+                                "domain": [0, domain_max],
+                                "trackColor": "#1a1a1a",
+                                "centerPercentage": 75,
+                                "centerArea": {
+                                  "text": hr_str,
+                                  "fontColor": "#00ff00",
+                                  "fontSize": 24
+                                }
+                              }
+                            }
+                            encoded = urllib.parse.quote(json.dumps(chart_config))
+                            chart_url = f"https://quickchart.io/chart?c={encoded}&bkg=black&w=400&h=250"
+                            final_text += f"\n\n![Hashrate Live Data]({chart_url})"
                     
                     yield final_text
                     return
