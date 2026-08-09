@@ -472,7 +472,7 @@ export default function Chat({ isDark }) {
                   }
                 }}
                 disabled={loading}
-                className="snap-start flex-none w-[140px] md:flex-1 md:w-auto min-h-[44px] px-3 md:px-4 py-2 rounded-full text-[11px] font-medium text-center leading-tight transition-all duration-300 hover:scale-[1.03] hover:-translate-y-0.5 bg-white/5 border border-white/10 text-brand-300 hover:text-white hover:border-accent/50 hover:bg-accent/10 hover:shadow-[0_0_15px_rgba(38,154,76,0.2)] disabled:opacity-50 disabled:hover:scale-100 disabled:hover:translate-y-0"
+                className="snap-start flex-none w-[140px] md:flex-1 md:w-auto md:min-w-[132px] min-h-[44px] px-3 md:px-4 py-2 rounded-full text-[11px] font-medium text-center leading-tight transition-all duration-300 hover:scale-[1.03] hover:-translate-y-0.5 bg-white/5 border border-white/10 text-brand-300 hover:text-white hover:border-accent/50 hover:bg-accent/10 hover:shadow-[0_0_15px_rgba(38,154,76,0.2)] disabled:opacity-50 disabled:hover:scale-100 disabled:hover:translate-y-0"
               >
                 <span className="md:hidden block">{labels?.[`${cmd.id}Short`] || labels?.[cmd.id] || cmd.id}</span>
                 <span className="hidden md:block">{labels?.[cmd.id] || cmd.id}</span>

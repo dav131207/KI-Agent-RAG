@@ -95,7 +95,7 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+        className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-4"
       >
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={!loading ? onClose : undefined} />
 
@@ -103,7 +103,7 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className={`relative w-full max-w-md overflow-hidden rounded-2xl shadow-2xl border ${
+          className={`relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl border ${
             isDark ? 'bg-brand-900 border-white/10 text-white' : 'bg-white border-brand-200 text-brand-900'
           }`}
         >

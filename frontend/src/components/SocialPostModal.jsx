@@ -178,7 +178,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark, mod
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] px-4"
+        className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto px-4 pt-[8vh] pb-8 sm:pt-[15vh]"
       >
         <div
           className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -231,7 +231,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark, mod
 
           {/* Results List */}
           {step !== 'topic' && (
-            <div className={`max-h-[300px] overflow-y-auto border-t ${isDark ? 'border-white/5' : 'border-brand-100'} p-2`}>
+            <div className={`max-h-[45vh] sm:max-h-[300px] overflow-y-auto border-t ${isDark ? 'border-white/5' : 'border-brand-100'} p-2`}>
               {options.map((option, idx) => (
                 <button
                   key={option.id}

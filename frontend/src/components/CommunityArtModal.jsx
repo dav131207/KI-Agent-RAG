@@ -52,7 +52,7 @@ export default function CommunityArtModal({ isOpen, onClose, onSubmit, isDark })
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex items-start justify-center pt-[20vh] px-4"
+        className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto px-4 pt-[8vh] pb-8 sm:pt-[20vh]"
       >
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
@@ -83,7 +83,7 @@ export default function CommunityArtModal({ isOpen, onClose, onSubmit, isDark })
             />
           </div>
 
-          <div className={`max-h-[300px] min-h-[100px] overflow-y-auto border-t ${isDark ? 'border-white/5' : 'border-brand-100'} p-2`}>
+          <div className={`max-h-[45vh] sm:max-h-[300px] min-h-[100px] overflow-y-auto border-t ${isDark ? 'border-white/5' : 'border-brand-100'} p-2`}>
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 size={24} className="animate-spin text-accent" />
