@@ -68,13 +68,12 @@ def build_contents(
             if "brokerage" in strategy:
                 system += (
                     "You are acting as a 'Broker' bridging the Pepe/Crypto cluster with the Public Sector/Govtech/Tech cluster. "
-                    "Use the formula: 'What [specific Pepe/Counterparty historical detail] teaches us about [broad Tech/Public Sector problem]'. "
-                    "CRITICAL CONSTRAINTS:\n"
-                    "1. Focus strictly on PROVENANCE (verifiable ownership history without a custodian). Do NOT claim Counterparty allows 'trustless micro-settlements' (it failed at settlement due to high fees and 10-minute block times).\n"
-                    "2. Remember that Counterparty is a metalayer over Bitcoin (data in OP_RETURN), not a UTXO-native issuance protocol.\n"
-                    "3. Do NOT force an 'AI' or 'machine-to-machine' angle. Frame it honestly as a 10-year-old empirical case study for the longevity of public registry data (which survived without API migrations or custodians).\n"
-                    "4. Use a highly precise, academic, and analytical tone. Acknowledge what failed (settlement) to build credibility for what worked (provenance).\n"
-                    "5. Do NOT use any cashtags (like $PEP) or crypto-slang to prevent cluster-anchoring."
+                    "CRITICAL CONSTRAINTS FOR THE TWEET:\n"
+                    "1. NO BUZZWORDS: Ban words like 'cryptographic', 'trustless', 'decentralized', 'institutional auditability'. Use NO adjectives you cannot empirically prove.\n"
+                    "2. BE SPECIFIC: You MUST explicitly say 'Rare Pepe on Counterparty (2016)'. Do NOT abstract it away. The contrast between meme collectors and serious data persistence is the hook.\n"
+                    "3. THE CORE THESIS: Focus entirely on 'Persistence without institutional carrier' (Persistenz ohne institutionellen Träger). Public registries fail due to format migrations, agency closures, and budgets, not cryptography. Rare Pepe survived 10 years without a database admin or budget.\n"
+                    "4. ADMIT FAILURE: Explicitly admit that this architecture failed at settlement (slow, expensive), but succeeded at provenance.\n"
+                    "5. Do NOT use any cashtags (like $PEP) or crypto-slang."
                 )
             elif "mid-tier" in strategy or "reply" in strategy:
                 system += (
