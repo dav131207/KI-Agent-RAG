@@ -85,7 +85,15 @@ async def get_pepe_market_data(http_client: httpx.AsyncClient) -> str:
             logger.error(f"Failed to fetch pepeblocks data: {e}")
 
         if context_str:
-            context_str += "\nUse this real-time data to answer questions about the current network statistics."
+            context_str += (
+                "\n\nKNOWN ECOSYSTEM EXPLORERS & POOLS:\n"
+                "- pepeblocks.com (Primary Explorer)\n"
+                "- pepecoinexplorer.com (Explorer)\n"
+                "- pepeplorer.com (Explorer)\n"
+                "- peppool.space (Mining Pool)\n"
+                "- pepecoinservice.org (Services/Explorer)\n"
+                "\nUse this real-time data and these resources to answer questions about the current network statistics or point users to verifications."
+            )
             _cache["data"] = context_str
             _cache["time"] = now
             return context_str
