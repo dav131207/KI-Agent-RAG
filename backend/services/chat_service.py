@@ -1,5 +1,6 @@
 """Chat and content generation services."""
 
+import logging
 import re
 from typing import AsyncGenerator, Optional
 
@@ -8,8 +9,11 @@ from core.config import DEFAULT_MODEL, SYSTEM_PROMPT_PATH
 from core.providers import get_llm_provider
 from core.providers.base import LLMError
 from fastapi import HTTPException
-from services.crypto_service import get_pepe_market_data
+from services.chain_image_service import build_chain_stats_url
+from services.crypto_service import get_pepe_chain_data, get_pepe_market_data
 from core.http import http
+
+logger = logging.getLogger(__name__)
 
 if SYSTEM_PROMPT_PATH.exists():
     _system_prompt = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
@@ -26,6 +30,27 @@ def is_social_command(message: str) -> bool:
     return bool(
         re.match(r"^create\s+a?\s*social\s+media\s+post", (message or "").strip(), re.IGNORECASE)
     )
+
+
+def parse_social_params(message: str) -> tuple[str, str]:
+    """
+    Extract (platform, strategy) from a social-post command.
+
+    Both the prompt builder and the post formatter must agree on the strategy,
+    so the parsing lives in one place instead of being re-derived per call site.
+    """
+    message = message or ""
+
+    platform_match = re.search(r"Platform:\s*(\w+)", message, re.IGNORECASE)
+    platform = platform_match.group(1).lower() if platform_match else "twitter"
+
+    # Prefer the "Tonality: <x>. Topic" form; fall back to a trailing sentence.
+    tonality_match = re.search(r"Tonality:\s*(.+?)\.\s*Topic", message, re.IGNORECASE)
+    if not tonality_match:
+        tonality_match = re.search(r"Tonality:\s*([\w\s-]+)\.", message, re.IGNORECASE)
+    strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
+
+    return platform, strategy
 
 
 def build_contents(
@@ -56,12 +81,9 @@ def build_contents(
         )
 
     if is_social_command(message):
-        platform_match = re.search(r"Platform:\s*(\w+)", message, re.IGNORECASE)
-        platform = platform_match.group(1).lower() if platform_match else "twitter"
+        platform, strategy = parse_social_params(message)
 
         system += "\n\nYou are generating a social media post. "
-        tonality_match = re.search(r"Tonality:\s*([\w\s-]+)\.", message, re.IGNORECASE)
-        strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
 
         if platform == "twitter":
             system += "Format the post for Twitter. If it requires more space than a single tweet, format it as a THREAD (e.g., 1/ ..., 2/ ...). Keep each part very concise. "
@@ -233,10 +255,7 @@ async def generate_chat_response(
         async def streamer():
             try:
                 if is_social:
-                    platform_match = re.search(r"Platform:\s*(\w+)", message, re.IGNORECASE)
-                    platform = platform_match.group(1).lower() if platform_match else "twitter"
-                    tonality_match = re.search(r"Tonality:\s*(.+?)\.\s*Topic", message, re.IGNORECASE)
-                    strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
+                    platform, strategy = parse_social_params(message)
 
                     full = ""
                     async for chunk in provider.stream(DEFAULT_MODEL, contents, temperature=0.9):
@@ -260,47 +279,17 @@ async def generate_chat_response(
                             meme_url = build_watermarked_url(base_url, ext_url, filename)
                             final_text += f"\n\n![Rare Pepe]({meme_url})"
                             
-                    # Auto-Chart Synergy for Miner Synergy strategy
-                    if platform == "twitter" and "miner" in strategy:
-                        import urllib.parse
-                        import json
-                        
-                        hr_ths = 0.0
-                        hr_match = re.search(r"Hashrate: ([\d,\.]+) TH/s", context)
-                        if hr_match:
-                            try:
-                                hr_ths = float(hr_match.group(1).replace(",", ""))
-                            except ValueError:
-                                pass
-                                
-                        if hr_ths > 0:
-                            domain_max = 5000 if hr_ths < 5000 else 10000
-                            hr_str = f"{hr_ths / 1000:.2f} PH/s" if hr_ths > 1000 else f"{hr_ths:.0f} TH/s"
-                            
-                            chart_config = {
-                              "type": "radialGauge",
-                              "data": {
-                                "datasets": [{
-                                  "data": [hr_ths],
-                                  "backgroundColor": "#00ff00",
-                                  "borderWidth": 0
-                                }]
-                              },
-                              "options": {
-                                "domain": [0, domain_max],
-                                "trackColor": "#1a1a1a",
-                                "centerPercentage": 75,
-                                "centerArea": {
-                                  "text": hr_str,
-                                  "fontColor": "#00ff00",
-                                  "fontSize": 24
-                                }
-                              }
-                            }
-                            encoded = urllib.parse.quote(json.dumps(chart_config))
-                            chart_url = f"https://quickchart.io/chart?c={encoded}&bkg=black&w=400&h=250"
-                            final_text += f"\n\n![Hashrate Live Data]({chart_url})"
-                    
+                    # Auto-Chart Synergy for Miner Synergy strategy.
+                    # Numbers come straight from the explorer snapshot rather
+                    # than being regex-parsed back out of the prompt text.
+                    # Must match the prompt branch above, or a "synergy" post
+                    # gets the on-chain framing without the on-chain image.
+                    if platform == "twitter" and ("miner" in strategy or "synergy" in strategy):
+                        chain = await get_pepe_chain_data(http)
+                        chart_url = build_chain_stats_url(base_url, chain)
+                        if chart_url:
+                            final_text += f"\n\n![Pepecoin Network — live on-chain data]({chart_url})"
+
                     yield final_text
                     return
 
@@ -319,10 +308,6 @@ async def generate_chat_response(
         raise HTTPException(status_code=e.status_code, detail=str(e))
 
     if is_social:
-        platform_match = re.search(r"Platform:\s*(\w+)", message, re.IGNORECASE)
-        platform = platform_match.group(1).lower() if platform_match else "twitter"
-        text = format_social_post(text, platform, getattr(req, "strategy", "standard"))
-        tonality_match = re.search(r"Tonality:\s*(.+?)\.\s*Topic", message, re.IGNORECASE)
-        strategy = (tonality_match.group(1).strip().lower() if tonality_match else "standard").replace(" ", "-")
+        platform, strategy = parse_social_params(message)
         text = format_social_post(text, platform, strategy)
     return text

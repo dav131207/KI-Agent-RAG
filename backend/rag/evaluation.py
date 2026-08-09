@@ -55,8 +55,14 @@ def evaluate_retriever(
     """
     precisions = []
     recalls = []
+    skipped = 0
 
     for case in cases:
+        # A case without labelled chunk ids can only ever score 0 and would
+        # silently drag the averages down, so it is reported instead.
+        if not case.relevant_chunk_ids:
+            skipped += 1
+            continue
         retrieved = retrieve_fn(case.query, k)
         precisions.append(precision_at_k(retrieved, case.relevant_chunk_ids, k))
         recalls.append(recall_at_k(retrieved, case.relevant_chunk_ids, k))
@@ -64,6 +70,8 @@ def evaluate_retriever(
     return {
         "k": k,
         "num_cases": len(cases),
-        "precision_at_k": round(sum(precisions) / len(precisions), 3) if precisions else 0.0,
-        "recall_at_k": round(sum(recalls) / len(recalls), 3) if recalls else 0.0,
+        "num_evaluated": len(precisions),
+        "num_skipped_unlabelled": skipped,
+        "precision_at_k": round(sum(precisions) / len(precisions), 3) if precisions else None,
+        "recall_at_k": round(sum(recalls) / len(recalls), 3) if recalls else None,
     }

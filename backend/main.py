@@ -99,7 +99,8 @@ index_html = frontend_dist / "index.html"
 async def spa_fallback(path: str):
     """Serve static files or index.html for SPA routing."""
     if path.startswith("api/"):
-        return {"detail": "Not Found"}
+        # Unmatched API routes must 404, not fall through to the SPA shell.
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
     file_path = (frontend_dist / path).resolve()
     if frontend_dist.resolve() in file_path.parents or file_path == frontend_dist.resolve():

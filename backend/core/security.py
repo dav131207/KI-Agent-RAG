@@ -21,6 +21,8 @@ RATE_LIMITS = {
     "/api/event": (120, 60),
     "/api/analytics": (60, 60),
     "/api/watermark": (100, 60),
+    "/api/chain-stats": (60, 60),
+    "/api/chain-stats.png": (100, 60),
     "/api/ingest/text": (10, 60),
     "/api/ingest/file": (10, 60),
 }
