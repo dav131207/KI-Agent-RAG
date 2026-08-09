@@ -270,10 +270,16 @@ async def chain_stats():
 
 
 @router.get("/chain-stats.png")
-async def chain_stats_image():
-    """Render the live on-chain snapshot as a stat card image for social posts."""
+async def chain_stats_image(metric: Optional[str] = None):
+    """
+    Render the live on-chain snapshot as a stat card image for social posts.
+
+    `metric` picks the headline figure (hashrate, blocktime, difficulty,
+    height, supply, peers) so repeated posts do not all lead with the same
+    number. Unknown or unavailable metrics fall back to the next best one.
+    """
     chain = await get_pepe_chain_data(http)
-    png = render_chain_stats_card(chain)
+    png = render_chain_stats_card(chain, metric=metric)
     if png is None:
         raise HTTPException(status_code=503, detail="Explorer unavailable")
     return Response(

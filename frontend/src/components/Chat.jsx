@@ -34,6 +34,24 @@ export default function Chat({ isDark }) {
   const [showSwipeHint, setShowSwipeHint] = useState(true)
   const bottomRef = useRef(null)
 
+  // Headline metric for the on-chain card. Matches the post's topic when it
+  // names one, otherwise rotates so consecutive posts don't look identical.
+  const CHAIN_METRIC_HINTS = [
+    [/\b(block\s*time|blockzeit|confirmation|latency)\b/i, 'blocktime'],
+    [/\b(difficulty|schwierigkeit|retarget)\b/i, 'difficulty'],
+    [/\b(supply|emission|inflation)\b/i, 'supply'],
+    [/\b(node|peer|distribution)\b/i, 'peers'],
+    [/\b(hashrate|hash|mining|miner|pow|scrypt)\b/i, 'hashrate'],
+  ]
+  const ROTATING_METRICS = ['hashrate', 'blocktime', 'difficulty', 'height']
+
+  const pickChainMetric = (text) => {
+    for (const [pattern, metric] of CHAIN_METRIC_HINTS) {
+      if (pattern.test(text)) return metric
+    }
+    return ROTATING_METRICS[Math.floor(Math.random() * ROTATING_METRICS.length)]
+  }
+
   const handleSocialSubmit = ({ platform, language, tonality, topic }) => {
     setIsSocialModalOpen(false)
     const prompt = `create a social media post. Platform: ${platform}. Language: ${language}. Tonality: ${tonality}. Topic: ${topic}`
@@ -212,7 +230,9 @@ export default function Chat({ isDark }) {
         const chainOk = await fetch(`${API_BASE}/api/chain-stats`)
           .then((r) => r.ok)
           .catch(() => false)
-        imageUrl = chainOk ? `${API_BASE}/api/chain-stats.png?t=${Date.now()}` : null
+        imageUrl = chainOk
+          ? `${API_BASE}/api/chain-stats.png?metric=${pickChainMetric(sendText)}&t=${Date.now()}`
+          : null
       } else if (wantsImage || isSocialCommand) {
         imageUrl = await fetchImage(sendText)
       }

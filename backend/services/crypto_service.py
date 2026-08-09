@@ -175,6 +175,9 @@ async def get_pepe_chain_data(http_client: httpx.AsyncClient) -> dict[str, Any]:
             logger.warning(f"Failed to fetch connection count from {explorer_source}: {e}")
 
     snapshot["source"] = source
+    # Stamped with the fetch time, not the render time: the card is drawn on
+    # every request but the numbers behind it are up to 60s old.
+    snapshot["fetched_at"] = now
     logger.info(f"On-chain snapshot from {source}")
 
     _chain_cache["data"] = snapshot

@@ -7,6 +7,7 @@ shared axis. Rendering happens locally with Pillow so the numbers are not handed
 to a third-party chart service.
 """
 
+from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any, Optional
 
@@ -59,6 +60,13 @@ def _fit_font(draw: ImageDraw.ImageDraw, text: str, max_w: int, size: int, bold:
     return _font(18, bold=bold)
 
 
+def _fmt_timestamp(fetched_at: Optional[float]) -> str:
+    """Render the fetch time in UTC so the card states how current it is."""
+    if not fetched_at:
+        return "live"
+    return datetime.fromtimestamp(fetched_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
 def _source_label(chain: dict[str, Any]) -> str:
     """
     Name the hosts the data actually came from.
@@ -90,8 +98,50 @@ def _fmt_supply(value: Optional[float]) -> str:
     return f"{value:,.0f} PEP"
 
 
-def render_chain_stats_card(chain: dict[str, Any]) -> Optional[bytes]:
-    """Render the on-chain snapshot as a PNG stat card. Returns None if empty."""
+def _metric_tiles(chain: dict[str, Any]) -> dict[str, tuple[str, str, str]]:
+    """
+    Every metric the card can show, as {key: (hero label, tile label, value)}.
+
+    The tile label is the short form: a headline has the full card width, a
+    132px tile does not.
+    """
+    block_time = chain.get("avg_block_time_s")
+    return {
+        "hashrate": ("NETWORK HASHRATE", "HASHRATE", format_hashrate(chain.get("hashrate_ths"))),
+        "blocktime": ("AVG BLOCK TIME", "BLOCK TIME", f"{block_time:.0f}s" if block_time else "n/a"),
+        "difficulty": ("DIFFICULTY", "DIFFICULTY", _fmt_int(chain.get("difficulty"))),
+        "height": ("BLOCK HEIGHT", "HEIGHT", _fmt_int(chain.get("block_height"))),
+        "supply": ("SUPPLY", "SUPPLY", _fmt_supply(chain.get("supply"))),
+        "peers": ("PEERS", "PEERS", _fmt_int(chain.get("connection_count"))),
+    }
+
+
+def _pick_hero(chain: dict[str, Any], metric: Optional[str]) -> str:
+    """
+    Choose which metric leads the card.
+
+    Falls through to the next available metric when the requested one has no
+    value, so a blocked explorer never puts an "n/a" in the headline.
+    """
+    tiles = _metric_tiles(chain)
+    order = [metric] if metric else []
+    order += ["hashrate", "blocktime", "difficulty", "height"]
+
+    for key in order:
+        if key in tiles and tiles[key][2] != "n/a":
+            return key
+    return "height"
+
+
+def render_chain_stats_card(
+    chain: dict[str, Any], metric: Optional[str] = None
+) -> Optional[bytes]:
+    """
+    Render the on-chain snapshot as a PNG stat card. Returns None if empty.
+
+    `metric` selects the headline figure so consecutive posts do not all lead
+    with the same number.
+    """
     if not chain:
         return None
 
@@ -103,42 +153,48 @@ def render_chain_stats_card(chain: dict[str, Any]) -> Optional[bytes]:
     f_foot = _font(22)
 
     draw.text((56, 44), "PEPECOIN NETWORK", font=f_title, fill=INK_PRIMARY)
-    draw.text((56, 92), f"Live on-chain data · {_source_label(chain)}", font=f_label, fill=INK_MUTED)
+    subtitle = f"{_source_label(chain)} · {_fmt_timestamp(chain.get('fetched_at'))}"
+    draw.text((56, 92), subtitle, font=f_label, fill=INK_MUTED)
 
     # Headline metric: network hashrate.
-    # Hashrate only comes from the iquidus explorers. When those are blocked,
-    # block height leads instead, so the card never headlines an "n/a".
-    if chain.get("hashrate_ths") is not None:
-        hero_label, hero = "NETWORK HASHRATE", format_hashrate(chain["hashrate_ths"])
-    else:
-        hero_label, hero = "BLOCK HEIGHT", _fmt_int(chain.get("block_height"))
+    tiles = _metric_tiles(chain)
+    hero_key = _pick_hero(chain, metric)
+    hero_label, _short, hero = tiles[hero_key]
 
     draw.text((56, 168), hero_label, font=f_label, fill=INK_MUTED)
     draw.text((56, 204), hero, font=_fit_font(draw, hero, CARD_W - 112, 96), fill=ACCENT)
 
     # Supporting metrics, each in its own unit — deliberately not co-plotted.
-    block_time = chain.get("avg_block_time_s")
+    # Fill the row with the best available metrics, skipping the headline so it
+    # is never printed twice, and dropping any that have no value.
     stats = [
-        ("DIFFICULTY", _fmt_int(chain.get("difficulty"))),
-        ("BLOCK TIME", f"{block_time:.0f}s" if block_time else "n/a"),
-    ]
-    # Whichever metric is not already the headline fills the remaining tiles.
-    if hero_label == "BLOCK HEIGHT":
-        stats.append(("PEERS", _fmt_int(chain.get("connection_count"))))
-    else:
-        stats.insert(0, ("BLOCK HEIGHT", _fmt_int(chain.get("block_height"))))
-    stats.append(("SUPPLY", _fmt_supply(chain.get("supply"))))
+        (tiles[key][1], tiles[key][2])
+        for key in ("height", "hashrate", "difficulty", "blocktime", "supply", "peers")
+        if key != hero_key and tiles[key][2] != "n/a"
+    ][:4]
 
     margin, gap, box_h, top = 56, 16, 132, 350
     pad = 20
-    # Derive the box width from the margins so the row stays symmetric.
-    box_w = (CARD_W - 2 * margin - gap * (len(stats) - 1)) // len(stats)
+    # Derive the box width from the margins so the row stays symmetric. With a
+    # single reachable source the row can come out empty, hence the guard.
+    box_w = (
+        (CARD_W - 2 * margin - gap * (len(stats) - 1)) // len(stats) if stats else 0
+    )
+
+    inner_w = box_w - 2 * pad
+    # One label size for the whole row: sizing each label on its own makes the
+    # longest one visibly smaller than its neighbours.
+    label_size = 26
+    while label_size > 14 and any(
+        draw.textlength(label, font=_font(label_size)) > inner_w for label, _ in stats
+    ):
+        label_size -= 2
+    f_tile_label = _font(label_size)
 
     for i, (label, value) in enumerate(stats):
         x = margin + i * (box_w + gap)
         draw.rounded_rectangle([x, top, x + box_w, top + box_h], radius=10, fill=PANEL)
-        inner_w = box_w - 2 * pad
-        draw.text((x + pad, top + 22), label, font=_fit_font(draw, label, inner_w, 26, bold=False), fill=INK_MUTED)
+        draw.text((x + pad, top + 22), label, font=f_tile_label, fill=INK_MUTED)
         draw.text((x + pad, top + 62), value, font=_fit_font(draw, value, inner_w, 46), fill=INK_PRIMARY)
 
     draw.text(
