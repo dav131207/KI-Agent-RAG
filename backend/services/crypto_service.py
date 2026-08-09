@@ -46,24 +46,49 @@ async def get_pepe_market_data(http_client: httpx.AsyncClient) -> str:
         r.raise_for_status()
         data = r.json().get("pepecoin-network", {})
         
+        context_str = ""
         if data:
             price = data.get("usd", 0)
             mc = data.get("usd_market_cap", 0)
             change = data.get("usd_24h_change", 0)
             vol = data.get("usd_24h_vol", 0)
             
-            context = (
+            context_str += (
                 "CURRENT $PEP (Pepecoin) MARKET DATA (from CoinGecko):\n"
                 f"- Price: ${price}\n"
-                f"- Market Cap: ${mc}\n"
-                f"- 24h Volume: ${vol}\n"
+                f"- Market Cap: ${mc:,.0f}\n"
+                f"- 24h Volume: ${vol:,.0f}\n"
                 f"- 24h Change: {change:+.2f}%\n"
-                "Use this real-time data to answer questions about the current price, market cap, or volume."
             )
             
-            _cache["data"] = context
+        # Fetch on-chain data from Pepeblocks
+        try:
+            r_blocks = await http_client.get("https://pepeblocks.com/ext/getsummary")
+            if r_blocks.status_code == 200:
+                block_data = r_blocks.json()
+                hashrate = block_data.get("hashrate", 0)
+                difficulty = block_data.get("difficulty", 0)
+                blocks = block_data.get("blockcount", 0)
+                supply = block_data.get("supply", 0)
+                
+                # Convert hashrate to TH/s or PH/s
+                hr_ths = hashrate / 1e12
+                
+                context_str += (
+                    "\nCURRENT ON-CHAIN DATA (from Pepeblocks Explorer):\n"
+                    f"- Current Block: {blocks:,}\n"
+                    f"- Difficulty: {difficulty:,.0f}\n"
+                    f"- Hashrate: {hr_ths:,.2f} TH/s\n"
+                    f"- Circulating Supply: {supply:,.0f} PEP\n"
+                )
+        except Exception as e:
+            logger.error(f"Failed to fetch pepeblocks data: {e}")
+
+        if context_str:
+            context_str += "\nUse this real-time data to answer questions about the current network statistics."
+            _cache["data"] = context_str
             _cache["time"] = now
-            return context
+            return context_str
             
     except Exception as e:
         logger.error(f"Failed to fetch coingecko data: {e}")
