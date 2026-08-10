@@ -27,17 +27,21 @@ else:
     )
 
 
-def is_break_algo_command(message: str) -> bool:
-    """Detect the 'break the algo' command."""
-    return bool(re.match(r"^break\s+the\s+algo", (message or "").strip(), re.IGNORECASE))
-
-
 def is_social_command(message: str) -> bool:
-    """Detect either post-generating command; both produce a social post."""
+    """
+    Detect the post-generating command.
+
+    "break the algo" was a second command whose options overlapped this one's;
+    its tactics are goals here now, but old clients may still send it.
+    """
     message = (message or "").strip()
     return bool(
-        re.match(r"^create\s+a?\s*social\s+media\s+post", message, re.IGNORECASE)
-    ) or is_break_algo_command(message)
+        re.match(
+            r"^(create\s+a?\s*social\s+media\s+post|break\s+the\s+algo)",
+            message,
+            re.IGNORECASE,
+        )
+    )
 
 
 def parse_social_params(message: str) -> tuple[str, str, str]:
@@ -45,8 +49,8 @@ def parse_social_params(message: str) -> tuple[str, str, str]:
     Extract (platform, strategy, post_format) from a post command.
 
     Every call site must agree on these, so the parsing lives in one place
-    instead of being re-derived per caller. "Tactic:" is the break-the-algo
-    spelling of "Tonality:".
+    instead of being re-derived per caller. "Goal:" is the current spelling;
+    "Tonality:" and "Tactic:" are accepted so a cached client still works.
     """
     message = message or ""
 
@@ -55,11 +59,11 @@ def parse_social_params(message: str) -> tuple[str, str, str]:
 
     # Prefer the "<label>: <x>. <next field>" form; fall back to a trailing
     # sentence so a command without a following field still parses.
-    label = r"(?:Tonality|Tactic)"
+    label = r"(?:Goal|Tonality|Tactic)"
     match = re.search(rf"{label}:\s*(.+?)\.\s*(?:Format|Topic)", message, re.IGNORECASE)
     if not match:
         match = re.search(rf"{label}:\s*([\w\s-]+)\.", message, re.IGNORECASE)
-    strategy = (match.group(1).strip().lower() if match else "standard").replace(" ", "-")
+    strategy = (match.group(1).strip().lower() if match else "community").replace(" ", "-")
 
     format_match = re.search(r"Format:\s*(\w+)", message, re.IGNORECASE)
     post_format = format_match.group(1).lower() if format_match else "thread"
@@ -69,80 +73,82 @@ def parse_social_params(message: str) -> tuple[str, str, str]:
 
 TWEET_LIMIT = 280
 
-# "Break the algo": tactics aimed at reach and replies rather than at a voice.
-# Kept apart from the tonalities so choosing a tone and choosing a growth tactic
-# stay separate decisions.
-ALGO_BASE_INSTRUCTION = (
-    "ALGORITHM MODE: This post is optimised for reach and replies. Engineer the first line to "
-    "stop the scroll, and give people a concrete reason to comment rather than just like. "
-    "Sound like a person with an opinion, never like marketing. "
-    "HARD RULES: stay factually honest — an intentionally provocative framing is fine, a false "
-    "claim is not. No financial advice, no price predictions, no promises of returns, and never "
-    "imply anyone will make money. Do not impersonate anyone and do not invent quotes, numbers "
-    "or endorsements."
-)
-
-# Keys must not be substrings of one another: "reply-bait" contains "bait", so
-# a "bait" key would swallow the Reply Bait tactic.
-ALGO_TACTICS = {
-    "correction": (
-        "TACTIC — BAIT CORRECTION (Cunningham's Law): State a confident take with one clear, "
-        "checkable weak spot that informed readers will want to correct. The weak spot must be a "
-        "matter of interpretation or emphasis, never a fabricated fact. Invite the correction "
-        "implicitly — do not write 'change my mind'."
+# One goal list replaces the old split between tonalities, Twitter strategies
+# and algorithm tactics. Those overlapped ("Engagement" and "Reply Bait" both
+# chased replies) and were named in jargon a newcomer could not decode, so the
+# menu now asks what the post should achieve, in plain words.
+GOAL_INSTRUCTIONS = {
+    "community": (
+        "GOAL — POST TO THE COMMUNITY: Speak to people already in the Pepecoin community. "
+        "Always include @PepecoinNetwork, @dogecoin, @litecoin and @Bitcoin. Use relevant "
+        "cashtags like $PEP. CRITICAL: Use ONLY 0 to 1 emojis maximum in the entire post. "
+        "CRITICAL: Be extremely creative. Use high variance in sentence structure, vocabulary, "
+        "and angles."
     ),
-    "contrarian": (
-        "TACTIC — CONTRARIAN TAKE: Argue a defensible minority position against the consensus in "
-        "this space. Give the strongest one-line reason for it and concede the best "
-        "counter-argument. The goal is a split room, not a pile-on."
+    "explain": (
+        "GOAL — EXPLAIN SOMETHING: Break the mechanism down so a curious outsider can follow it. "
+        "Define each technical term the first time it appears. Lead with the concept and use "
+        "Pepecoin only as the worked example. No marketing language and no call to action."
+    ),
+    "outside": (
+        "GOAL — REACH PEOPLE OUTSIDE CRYPTO: You are bridging the Pepe/Crypto cluster with the "
+        "Public Sector/Govtech/Tech cluster.\n"
+        "1. NO BUZZWORDS: Ban words like 'cryptographic', 'trustless', 'decentralized', "
+        "'institutional auditability'. Use NO adjectives you cannot empirically prove.\n"
+        "2. BE SPECIFIC: You MUST explicitly say 'Rare Pepe on Counterparty (2016)'. Do NOT "
+        "abstract it away. The contrast between meme collectors and serious data persistence is "
+        "the hook.\n"
+        "3. THE CORE THESIS: Focus entirely on 'Persistence without institutional carrier'. "
+        "Public registries fail due to format migrations, agency closures, and budgets. Rare Pepe "
+        "survived 10 years without a database admin or budget.\n"
+        "4. CREDIBILITY & NUANCE: Do not say it 'proved' anything; say it 'shows' or 'is evidence "
+        "of'. Acknowledge the 'catch': persistence rides on Bitcoin's economic incentive structure "
+        "instead of a department budget. Also explicitly admit it failed at settlement (slow, "
+        "expensive).\n"
+        "5. Do NOT use any cashtags (like $PEP) or crypto-slang. End by inviting pushback from "
+        "policy/tech experts."
+    ),
+    "discussion": (
+        "GOAL — START A DISCUSSION: End on one specific, low-effort question anybody in the "
+        "audience can answer from their own experience. Avoid yes/no questions and never ask "
+        "about price. The question must follow from the post rather than being bolted on. "
+        "CRITICAL: Do NOT use any cashtags (like $PEP)."
+    ),
+    "data": (
+        "GOAL — SHOW NETWORK DATA: Write a highly analytical post for the Dogecoin/Litecoin "
+        "mining community and cypherpunks.\n"
+        "1. Focus strictly on the CATEGORY: Scrypt merged mining, UTXO economics, PoW, hashrate, "
+        "or node distribution.\n"
+        "2. Pepecoin is just the EXAMPLE, not the subject. Do not sound like an ad. No price talk, "
+        "no 'next 100x'.\n"
+        "3. USE DATA: cite the on-chain figures you were given and attribute them. Only reference "
+        "a trend if the data actually shows one. Mention that Pepecoin shares the exact same "
+        "physical miner base as Doge/Litecoin.\n"
+        "4. ADMIT WEAKNESSES: Build credibility by admitting the limits of merged mining (e.g. "
+        "'borrowed hashrate').\n"
+        "5. Use relevant hashtags/cashtags ($DOGE, $LTC, $PEP) but keep it academic and structural."
     ),
     "reply": (
-        "TACTIC — REPLY BAIT: End on one specific, low-effort question anybody in the audience can "
-        "answer from their own experience. Avoid yes/no questions and avoid asking for opinions on "
-        "price. The question must follow from the post, not be bolted on."
+        "GOAL — REPLY TO SOMEONE: You are replying to a post from a mid-tier account "
+        "(10k-150k followers) in an adjacent tech/policy cluster. Add real structural value or a "
+        "unique bridging perspective. Do not shill and do not act promotional. "
+        "CRITICAL: Do NOT use any cashtags (like $PEP) or crypto-slang."
     ),
-    "rewatch": (
-        "TACTIC — REWATCH HOOK: Open with the payoff withheld — name the surprising outcome but "
-        "not the mechanism. Reveal the mechanism only at the very end, so the reader has to go "
-        "back to connect the two halves."
-    ),
-    "bubble": (
-        "TACTIC — BUBBLE BREAK: Write for an adjacent audience that is not already in crypto "
-        "(infrastructure, archives, public sector, gaming, open source). Lead with their problem, "
-        "not with the coin. Ban all crypto slang and cashtags; explain any term you cannot avoid."
+    "provoke": (
+        "GOAL — PROVOKE DISAGREEMENT: State a confident, defensible minority position with one "
+        "clear, checkable weak spot that informed readers will want to correct. The weak spot must "
+        "be a matter of interpretation or emphasis, NEVER a fabricated fact. Give the strongest "
+        "one-line reason for your take and concede the best counter-argument. Invite the "
+        "correction implicitly — do not write 'change my mind'."
     ),
 }
 
-# Tone instructions for the non-Twitter platforms. The modal offers six
-# tonalities but only "shill" used to reach the prompt, so the other five
-# produced a byte-identical request and the tone never changed.
-TONE_INSTRUCTIONS = {
-    "humorous": (
-        "TONE — HUMOROUS: Write with dry, self-aware meme humour. Land the joke through "
-        "understatement and specific absurd detail, not exclamation marks. One good joke beats "
-        "three weak ones. Never explain the joke, and never use 'lol' or laughing emojis."
-    ),
-    "professional": (
-        "TONE — PROFESSIONAL: Direct, factual, sober. No hype words ('massive', 'insane', 'huge'), "
-        "no emojis, no exclamation marks. Make claims you can support and attribute numbers to "
-        "their source. Short declarative sentences."
-    ),
-    "hype": (
-        "TONE — HYPE: High energy and bullish about the technology and the community. Keep it "
-        "about momentum, building and participation — never about price targets, returns, or "
-        "predictions, and never imply anyone will make money."
-    ),
-    "educational": (
-        "TONE — EDUCATIONAL: Explain the mechanism so a curious outsider follows it. Define each "
-        "technical term the first time it appears. Lead with the concept, use Pepecoin only as the "
-        "worked example. No marketing language and no call to action."
-    ),
-    "philosophical": (
-        "TONE — PHILOSOPHICAL: Reflective and abstract, about decentralisation, trust and "
-        "permanence. Pose the question rather than answering it. No cashtags, no price talk, no "
-        "promotion — the reader should leave thinking, not buying."
-    ),
-}
+# Applies to every goal: a sharp framing is fine, a false one is not.
+POST_HONESTY_RULES = (
+    "ALWAYS: stay factually honest — a provocative framing is fine, a false claim is not. "
+    "No financial advice, no price predictions, no promises of returns, and never imply anyone "
+    "will make money. Do not impersonate anyone and do not invent quotes, numbers or endorsements."
+)
 
 
 def build_contents(
@@ -178,100 +184,46 @@ def build_contents(
         system += "\n\nYou are generating a social media post. "
 
         if platform == "twitter":
-            system += "Format the post for Twitter. If it requires more space than a single tweet which consists of 280 signs, format it as a THREAD (e.g., 1/ ..., 2/ ...). Keep each part very concise. "
-            system += "Do NOT include any external links (URLs) in the post text, as the X algorithm suppresses reach for external links. If a link is needed, write '(Link in the replies)' instead. "
-            if "brokerage" in strategy:
-                system += (
-                    "You are acting as a 'Broker' bridging the Pepe/Crypto cluster with the Public Sector/Govtech/Tech cluster. "
-                    "CRITICAL CONSTRAINTS FOR THE TWEET:\n"
-                    "1. NO BUZZWORDS: Ban words like 'cryptographic', 'trustless', 'decentralized', 'institutional auditability'. Use NO adjectives you cannot empirically prove.\n"
-                    "2. BE SPECIFIC: You MUST explicitly say 'Rare Pepe on Counterparty (2016)'. Do NOT abstract it away. The contrast between meme collectors and serious data persistence is the hook.\n"
-                    "3. THE CORE THESIS: Focus entirely on 'Persistence without institutional carrier'. Public registries fail due to format migrations, agency closures, and budgets. Rare Pepe survived 10 years without a database admin or budget.\n"
-                    "4. CREDIBILITY & NUANCE: Do not say it 'proved' anything; say it 'shows' or 'is evidence of'. Acknowledge the 'catch': persistence rides on Bitcoin's economic incentive structure instead of a department budget. Also explicitly admit it failed at settlement (slow, expensive).\n"
-                    "5. Do NOT use any cashtags (like $PEP) or crypto-slang. End by inviting pushback from policy/tech experts."
-                )
-            elif "miner" in strategy or "synergy" in strategy:
-                system += (
-                    "You are generating a highly analytical post targeting the Dogecoin/Litecoin mining community and Cypherpunks. "
-                    "CRITICAL CONSTRAINTS:\n"
-                    "1. Focus strictly on the CATEGORY: Scrypt merged mining, UTXO economics, PoW, Hashrate, or Node distribution.\n"
-                    "2. Pepecoin is just the EXAMPlE, not the subject. Do not sound like an ad. No price talk, no 'next 100x'.\n"
-                    "3. USE DATA: Reference hashrate development, node numbers, or block times. Mention that Pepecoin shares the exact same physical miner base as Doge/Litecoin.\n"
-                    "4. ADMIT WEAKNESSES: Build credibility by admitting the limits of merged mining (e.g. 'borrowed hashrate').\n"
-                    "5. Use relevant hashtags/cashtags ($DOGE, $LTC, $PEP) but keep it academic and structural."
-                )
-            elif "mid-tier" in strategy or "reply" in strategy:
-                system += (
-                    "You are replying to a tweet from a mid-tier account (10k-150k followers) in an adjacent tech/policy cluster. "
-                    "Add immense structural value or a unique 'Broker' perspective. "
-                    "Do not shill or act promotional. CRITICAL: Do NOT use any cashtags (like $PEP) or crypto-slang."
-                )
-            elif "engagement" in strategy:
-                system += (
-                    "Generate a post that ends with a structural or architectural question about Tech/Crypto to force replies from 'weak ties'. "
-                    "Focus on provoking a thoughtful discussion. CRITICAL: Do NOT use any cashtags (like $PEP)."
-                )
-            else:
-                # Standard (In-Cluster)
-                system += (
-                    "Always include @PepecoinNetwork, @dogecoin, @litecoin and @Bitcoin. "
-                    "Use relevant cashtags like $PEP. "
-                    "CRITICAL: Use ONLY 0 to 1 emojis maximum in the entire post. "
-                    "CRITICAL: Be extremely creative. Use high variance in sentence structure, vocabulary, and angles."
-                )
-
+            system += (
+                "Format the post for Twitter. "
+                "Do NOT include any external links (URLs) in the post text, as the X algorithm "
+                "suppresses reach for external links. If a link is needed, write "
+                "'(Link in the replies)' instead. "
+            )
         elif platform == "reddit":
             system += (
                 "Format this as a subtle, organic Reddit text post (use markdown). "
                 "Keep it concise, conversational, and non-promotional. "
                 "Do not write it like an ad or 'Due Diligence' unless explicitly asked. "
                 "Do NOT use Twitter @ handles. Refer to Pepecoin natively. "
-                "CRITICAL: Do NOT mention other cryptocurrencies like Dogecoin, Litecoin, or Bitcoin unless absolutely necessary to avoid automated spam filters. "
+                "CRITICAL: Do NOT mention other cryptocurrencies like Dogecoin, Litecoin, or "
+                "Bitcoin unless absolutely necessary to avoid automated spam filters. "
                 "CRITICAL: Avoid words like 'buy', 'invest', 'moon', 'gem', or 'pump'. "
                 "NEVER suggest or include images for Reddit posts. "
-                "Focus on asking genuine questions or sharing a quick, casual thought to spark comments. "
-                "CRITICAL: To prevent the user from copy-pasting the suggestions into the post, you MUST wrap the actual post text in a markdown blockquote (using >). "
-                "Then, UNDERNEATH the blockquote, suggest 2-3 highly relevant Subreddits where this post would perform best, formatted as: 'Suggested Subreddits: r/Subreddit1, r/Subreddit2'."
+                "CRITICAL: To prevent the user from copy-pasting the suggestions into the post, "
+                "you MUST wrap the actual post text in a markdown blockquote (using >). "
+                "Then, UNDERNEATH the blockquote, suggest 2-3 highly relevant Subreddits where "
+                "this post would perform best, formatted as: "
+                "'Suggested Subreddits: r/Subreddit1, r/Subreddit2'."
             )
-            if "shill" in strategy:
-                system += (
-                    "\n\nSHILL MODE ACTIVATED: Your goal is to hack the Reddit algorithm subtly. "
-                    "You must NOT sound like a marketer. Pose as a curious community member or skeptic. "
-                    "Write a slightly contrarian take or a 'stupid' question that forces people to correct you in the comments (Cunningham's Law). "
-                    "The goal is organic comment volume, which triggers the algorithm."
-                )
         elif platform == "tiktok":
             system += (
                 "Format this as a ready-to-post TikTok caption. "
-                "Do not write a video script or visual cues. Just write the highly engaging text caption that goes under the video. "
+                "Do not write a video script or visual cues. Just write the highly engaging text "
+                "caption that goes under the video. "
                 "Keep it punchy, conversational, and highly engaging for Gen-Z. "
-                "Include a strong text hook at the very beginning. "
-                "Include viral hashtags like #Pepecoin #Crypto #Web3 and ask a question to drive comments."
+                "Open with a strong hook that withholds the payoff, and land the payoff only at "
+                "the very end so people watch twice. "
+                "Include viral hashtags like #Pepecoin #Crypto #Web3 and ask a question to drive "
+                "comments."
             )
-            if "shill" in strategy:
-                system += (
-                    "\n\nSHILL MODE ACTIVATED: Your goal is to hack the TikTok algorithm. "
-                    "Optimize the caption to boost engagement (likes, shares, saves, and comments). "
-                    "Tease a 'secret' or controversial take in the first line so people rewatch the video. "
-                    "Tell viewers to 'save this video' or 'share with a fren' to push it into the algorithm."
-                )
 
-        if is_break_algo_command(message):
-            # Growth tactics are their own command, so they stack on top of the
-            # platform formatting rules rather than replacing a tone.
-            system += "\n\n" + ALGO_BASE_INSTRUCTION
-            for tactic_key, instruction in ALGO_TACTICS.items():
-                if tactic_key in strategy:
-                    system += f"\n\n{instruction}"
-                    break
-        elif platform != "twitter":
-            # Twitter picks a strategy rather than a tonality, so the tone block
-            # only applies to the platforms whose modal offers tonalities.
-            for tone_key, instruction in TONE_INSTRUCTIONS.items():
-                if tone_key in strategy:
-                    system += f"\n\n{instruction}"
-                    break
+        for goal_key, instruction in GOAL_INSTRUCTIONS.items():
+            if goal_key in strategy:
+                system += f"\n\n{instruction}"
+                break
 
+        system += f"\n\n{POST_HONESTY_RULES}"
         if platform == "twitter":
             system += (
                 f"\n\nHARD LIMIT: every single tweet must be at most {TWEET_LIMIT} characters, "
@@ -436,7 +388,7 @@ def enforce_tweet_limit(text: str, limit: int = TWEET_LIMIT, allow_thread: bool 
 def format_social_post(
     text: str,
     platform: str = "twitter",
-    strategy: str = "standard",
+    strategy: str = "community",
     post_format: str = "thread",
 ) -> str:
     """Normalize coin names to X/Twitter handles and ensure @PepecoinNetwork only for standard posts."""
@@ -445,7 +397,7 @@ def format_social_post(
     if platform != "twitter":
         return text
 
-    if strategy == "standard":
+    if strategy == "community":
         text = re.sub(r"(?<!@)\bDogecoin\b", "@dogecoin", text, flags=re.IGNORECASE)
         text = re.sub(r"(?<!@)\bLitecoin\b", "@litecoin", text, flags=re.IGNORECASE)
         text = re.sub(r"(?<!@)\bBitcoin\b", "@Bitcoin", text, flags=re.IGNORECASE)
@@ -528,7 +480,7 @@ async def generate_chat_response(
                     final_text = format_social_post(full, platform, strategy, post_format)
 
                     # Auto-Meme Synergy for Standard Twitter strategy
-                    if platform == "twitter" and strategy == "standard":
+                    if platform == "twitter" and strategy == "community":
                         from rag.qdrant_store import get_random_pepe_meme
                         from api.routes import _extract_pepe_image_url
                         from services.image_service import build_watermarked_url

@@ -16,7 +16,6 @@ const COMMANDS = [
   { id: 'meme', prompt: 'random meme' },
   { id: 'rarepepe', prompt: 'rare pepe' },
   { id: 'social', prompt: 'create social media post' },
-  { id: 'breakalgo', prompt: 'break the algo' },
   { id: 'communityart', prompt: 'Community Art' },
 ]
 
@@ -30,7 +29,6 @@ export default function Chat({ isDark }) {
   const [typingText, setTypingText] = useState('')
   const [modalImage, setModalImage] = useState(null)
   const [isSocialModalOpen, setIsSocialModalOpen] = useState(false)
-  const [socialMode, setSocialMode] = useState('social')
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [isArtModalOpen, setIsArtModalOpen] = useState(false)
   const [showSwipeHint, setShowSwipeHint] = useState(true)
@@ -54,17 +52,14 @@ export default function Chat({ isDark }) {
     return ROTATING_METRICS[Math.floor(Math.random() * ROTATING_METRICS.length)]
   }
 
-  const handleSocialSubmit = ({ platform, language, tonality, format, topic, mode }) => {
+  const handleSocialSubmit = ({ platform, language, goal, format, topic }) => {
     setIsSocialModalOpen(false)
-    const command = mode === 'algo' ? 'break the algo' : 'create a social media post'
-    const label = mode === 'algo' ? 'Tactic' : 'Tonality'
     // Format only applies to Twitter; the other platforms have no 280 limit.
     const formatPart = format ? ` Format: ${format}.` : ''
     const prompt =
-      `${command}. Platform: ${platform}. Language: ${language}. ` +
-      `${label}: ${tonality}.${formatPart} Topic: ${topic}`
-    const id = mode === 'algo' ? 'breakalgo' : 'social'
-    handleSubmit(null, { id, display: labels[id] || labels['social'], send: prompt })
+      `create a social media post. Platform: ${platform}. Language: ${language}. ` +
+      `Goal: ${goal}.${formatPart} Topic: ${topic}`
+    handleSubmit(null, { id: 'social', display: labels['social'], send: prompt })
   }
 
   const handleArtSubmit = async (label) => {
@@ -225,12 +220,11 @@ export default function Chat({ isDark }) {
 
     try {
       const wantsImage = /\b(show|image|picture|pic|photo|visual|draw|meme)\b/i.test(sendText)
-      const isSocialCommand =
-        /^(create\s+a?\s*social\s+media\s+post|break\s+the\s+algo)/i.test(sendText)
+      const isSocialCommand = /^create\s+a?\s*social\s+media\s+post/i.test(sendText)
       // A mining/synergy post argues from network data, so it gets the live
       // on-chain card instead of a random meme, which would undercut it.
       const wantsChainCard =
-        isSocialCommand && /Tonality:\s*[^.]*\b(miner|synergy)\b/i.test(sendText)
+        isSocialCommand && /Goal:\s*Data\b/i.test(sendText)
 
       let imageUrl = null
       if (wantsChainCard) {
@@ -460,10 +454,6 @@ export default function Chat({ isDark }) {
                 type="button"
                 onClick={() => {
                   if (cmd.id === 'social') {
-                    setSocialMode('social')
-                    setIsSocialModalOpen(true)
-                  } else if (cmd.id === 'breakalgo') {
-                    setSocialMode('algo')
                     setIsSocialModalOpen(true)
                   } else if (cmd.id === 'communityart') {
                     setIsArtModalOpen(true)
@@ -516,7 +506,6 @@ export default function Chat({ isDark }) {
         onClose={() => setIsSocialModalOpen(false)}
         onSubmit={handleSocialSubmit}
         isDark={isDark}
-        mode={socialMode}
       />
       <UploadModal 
         isOpen={isUploadModalOpen} 

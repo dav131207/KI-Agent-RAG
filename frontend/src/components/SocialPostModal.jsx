@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Command, Globe, MessageSquare, Hash, ArrowRight, CornerDownLeft, Zap } from 'lucide-react'
+import { Command, Globe, MessageSquare, Hash, ArrowRight, CornerDownLeft, Target } from 'lucide-react'
 
 const LANGUAGES = [
   'English', 'German', 'Spanish', 'French',
@@ -13,30 +13,18 @@ const PLATFORMS = [
   { id: 'TikTok', label: 'TikTok', desc: 'Viral script, visual hooks, Gen-Z vibe' }
 ]
 
-// Pure tones. Algorithm tactics live in the "Break the algo" command instead,
-// so picking a voice and picking a growth tactic stay separate decisions.
-const TONALITIES = [
-  { id: 'Humorous', label: 'Humorous', desc: 'Sarcastic & witty meme style' },
-  { id: 'Professional', label: 'Professional', desc: 'Direct, factual, and serious' },
-  { id: 'Hype', label: 'Hype', desc: 'High energy, bullish sentiment' },
-  { id: 'Educational', label: 'Educational', desc: 'Informative tech breakdown' },
-  { id: 'Philosophical', label: 'Philosophical', desc: 'Abstract thoughts on decentralization' }
-]
-
-const TWITTER_STRATEGIES = [
-  { id: 'Standard', label: 'Standard (In-Cluster)', desc: 'Classic Pepe style with cashtags' },
-  { id: 'Brokerage', label: 'Brokerage (Cross-Cluster)', desc: 'Bridge Crypto history with Govtech/Tech. No cashtags' },
-  { id: 'Mid-Tier Reply', label: 'Mid-Tier Reply', desc: 'High-value reply to a specific tweet' },
-  { id: 'Engagement', label: 'Engagement (Weak Ties)', desc: 'Ask structural questions to provoke replies' },
-  { id: 'Miner Synergy', label: 'Miner Synergy (Dogecoin/Scrypt)', desc: 'Focus on PoW, UTXO, and Scrypt merged mining' }
-]
-
-const ALGO_TACTICS = [
-  { id: 'Bait Correction', label: 'Bait Correction', desc: "Cunningham's Law — a wrong-on-purpose take people rush to correct" },
-  { id: 'Contrarian Take', label: 'Contrarian Take', desc: 'Defensible minority position that splits the room' },
-  { id: 'Reply Bait', label: 'Reply Bait', desc: 'Open question that is cheap to answer and hard to scroll past' },
-  { id: 'Rewatch Hook', label: 'Rewatch Hook', desc: 'Withhold the payoff so people watch or read twice' },
-  { id: 'Bubble Break', label: 'Bubble Break', desc: 'Frame it for an adjacent community that is not already in crypto' }
+// One list of goals in plain language. It replaces the old split between
+// tonalities, Twitter strategies and algorithm tactics, which overlapped
+// ("Engagement" and "Reply Bait" both chased replies) and were named in jargon
+// a newcomer could not decode. The question is what the post should achieve.
+const GOALS = [
+  { id: 'Community', label: 'Post to the community', desc: 'Classic Pepe style, with cashtags and the usual handles' },
+  { id: 'Explain', label: 'Explain something', desc: 'Break the tech down so anyone can follow it' },
+  { id: 'Outside', label: 'Reach people outside crypto', desc: 'No slang — framed for a tech or public-sector audience' },
+  { id: 'Discussion', label: 'Start a discussion', desc: 'Ends on a question that gets people replying' },
+  { id: 'Data', label: 'Show network data', desc: 'Hashrate and mining, with a live chart attached' },
+  { id: 'Reply', label: 'Reply to someone', desc: 'A useful reply to somebody else\'s post' },
+  { id: 'Provoke', label: 'Provoke disagreement', desc: 'A sharp take people will want to correct' },
 ]
 
 const FORMATS = [
@@ -44,20 +32,19 @@ const FORMATS = [
   { id: 'Thread', label: 'Thread', desc: 'Numbered thread, each part under 280 characters' }
 ]
 
-// Steps are derived, not hardcoded: the format step only exists for Twitter and
-// the third step swaps between tone and tactic depending on the command.
-function buildSteps(mode, platform) {
-  const steps = ['platform', 'language', mode === 'algo' ? 'tactic' : 'tone']
+// Steps are derived, not hardcoded: the format step only exists for Twitter.
+function buildSteps(platform) {
+  const steps = ['platform', 'language', 'goal']
   if (platform === 'Twitter') steps.push('format')
   steps.push('topic')
   return steps
 }
 
-export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark, mode = 'social' }) {
+export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
   const [stepIndex, setStepIndex] = useState(0)
   const [platform, setPlatform] = useState('')
   const [language, setLanguage] = useState('')
-  const [choice, setChoice] = useState('')
+  const [goal, setGoal] = useState('')
   const [format, setFormat] = useState('')
   const [search, setSearch] = useState('')
   const inputRef = useRef(null)
@@ -67,31 +54,23 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark, mod
       setStepIndex(0)
       setPlatform('')
       setLanguage('')
-      setChoice('')
+      setGoal('')
       setFormat('')
       setSearch('')
       setTimeout(() => inputRef.current?.focus(), 100)
     }
-  }, [isOpen, mode])
+  }, [isOpen])
 
   if (!isOpen) return null
 
-  const isAlgo = mode === 'algo'
-  const steps = buildSteps(mode, platform)
+  const steps = buildSteps(platform)
   const step = steps[stepIndex] || 'topic'
 
   const matches = (text) => text.toLowerCase().includes(search.toLowerCase())
-  const choiceList = isAlgo
-    ? ALGO_TACTICS
-    : platform === 'Twitter'
-      ? TWITTER_STRATEGIES
-      : TONALITIES
-
   const options = {
     platform: PLATFORMS.filter((p) => matches(p.label) || matches(p.desc)),
     language: LANGUAGES.filter((l) => matches(l)).map((l) => ({ id: l, label: l, desc: '' })),
-    tone: choiceList.filter((t) => matches(t.label) || matches(t.desc)),
-    tactic: choiceList.filter((t) => matches(t.label) || matches(t.desc)),
+    goal: GOALS.filter((g) => matches(g.label) || matches(g.desc)),
     format: FORMATS.filter((f) => matches(f.label) || matches(f.desc)),
     topic: [],
   }[step]
@@ -100,17 +79,16 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark, mod
     onSubmit({
       platform,
       language,
-      tonality: choice,
+      goal,
       format: platform === 'Twitter' ? format || 'Single' : '',
       topic: search,
-      mode,
     })
 
   const select = (id) => {
     if (step === 'platform') setPlatform(id)
     else if (step === 'language') setLanguage(id)
     else if (step === 'format') setFormat(id)
-    else setChoice(id)
+    else setGoal(id)
     setStepIndex((i) => i + 1)
     setSearch('')
     inputRef.current?.focus()
@@ -133,35 +111,29 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark, mod
     }
   }
 
+  // The topic step asks for whatever that specific goal actually needs.
+  const TOPIC_PROMPTS = {
+    Reply: 'Paste the post you want to reply to...',
+    Outside: 'Which tech or public-sector topic should we bridge to?',
+    Data: 'E.g. hashrate, block times, Scrypt economics...',
+    Provoke: 'Which common assumption should we push back on?',
+    Explain: 'What should we explain?',
+  }
+
   const placeholder = {
     platform: 'Search platform...',
     language: 'Search language...',
-    tone: platform === 'Twitter' ? 'Search strategy...' : 'Search tonality...',
-    tactic: 'Search tactic...',
-    format: 'Single post or thread...',
-    topic:
-      platform === 'Twitter' && choice === 'Mid-Tier Reply'
-        ? 'Paste the tweet you want to reply to...'
-        : platform === 'Twitter' && choice === 'Brokerage'
-          ? 'What tech/public sector topic should we bridge with Pepe?'
-          : platform === 'Twitter' && choice === 'Miner Synergy'
-            ? 'E.g. Hashrate, UTXO aging, Scrypt economics...'
-            : isAlgo
-              ? 'What should the post be about? (Press Enter to generate)'
-              : 'What is this post about? (Press Enter to generate)',
+    goal: 'What should this post achieve?',
+    format: 'One post or a thread?',
+    topic: TOPIC_PROMPTS[goal] || 'What is this post about? (Press Enter to generate)',
   }[step]
 
   const crumbs = [
     { key: 'platform', icon: <Globe size={12} />, label: 'Platform', value: platform },
     { key: 'language', icon: <Globe size={12} />, label: 'Language', value: language },
-    {
-      key: isAlgo ? 'tactic' : 'tone',
-      icon: isAlgo ? <Zap size={12} /> : <MessageSquare size={12} />,
-      label: isAlgo ? 'Tactic' : platform === 'Twitter' ? 'Strategy' : 'Tonality',
-      value: choice,
-    },
+    { key: 'goal', icon: <Target size={12} />, label: 'Goal', value: goal },
     ...(platform === 'Twitter'
-      ? [{ key: 'format', icon: <Hash size={12} />, label: 'Format', value: format }]
+      ? [{ key: 'format', icon: <MessageSquare size={12} />, label: 'Format', value: format }]
       : []),
     { key: 'topic', icon: <Hash size={12} />, label: 'Topic', value: '' },
   ]
