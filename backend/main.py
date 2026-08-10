@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from analytics import track_event
 from api.routes import router
-from core.config import MEMES_DIR
+from core.config import COMMUNITY_ART_DIR, MEMES_DIR
 from core.http import close_http
 from core.security import is_rate_limited, rate_limit_response
 from services.language_service import get_client_host
@@ -91,6 +91,11 @@ if MEMES_DIR and MEMES_DIR.is_dir():
 uploads_dir = Path(__file__).resolve().parent / "data" / "uploads"
 if uploads_dir.is_dir():
     app.mount("/data/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+
+# Approved community art. Videos are served directly from here; images go
+# through /api/watermark, which resolves the same directory.
+COMMUNITY_ART_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/community", StaticFiles(directory=str(COMMUNITY_ART_DIR)), name="community")
 
 frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 index_html = frontend_dist / "index.html"

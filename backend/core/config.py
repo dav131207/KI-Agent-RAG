@@ -41,5 +41,13 @@ QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "professor_pepe")
 
 SYSTEM_PROMPT_PATH = BACKEND_DIR / "persona" / "system_prompt.txt"
 
+# Everything under DATA_DIR is expected to sit on a persistent volume (on
+# Render: the disk mounted at /app/backend/data). Anything written outside it
+# lives in the container filesystem and is discarded on the next deploy, so
+# user-generated content belongs here.
+DATA_DIR = BACKEND_DIR / "data"
+UPLOADS_DIR = DATA_DIR / "uploads"
+COMMUNITY_ART_DIR = DATA_DIR / "community"
+
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY", "")

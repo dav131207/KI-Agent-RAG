@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from PIL import Image
 from PIL.Image import Resampling
 
-from core.config import IMAGE_API_BASE, MEMES_DIR, WATERMARK_PATH
+from core.config import COMMUNITY_ART_DIR, IMAGE_API_BASE, MEMES_DIR, WATERMARK_PATH
 
 _watermark_image: Optional[Image.Image] = None
 
@@ -139,14 +139,32 @@ def is_image_url_allowed(url: str) -> bool:
     return any(url.startswith(p) for p in ALLOWED_IMAGE_PREFIXES)
 
 
+def _resolve_under(root: Optional[Path], relative: str, missing_detail: str) -> Path:
+    """Resolve `relative` under `root`, refusing anything that escapes it."""
+    if not root or not root.is_dir():
+        raise HTTPException(status_code=503, detail=missing_detail)
+    file_path = (root / relative).resolve()
+    root_resolved = root.resolve()
+    if root_resolved not in file_path.parents and file_path != root_resolved:
+        raise HTTPException(status_code=400, detail="Invalid image path")
+    return file_path
+
+
 def validate_memes_path(path: str) -> Path:
-    """Resolve a local memes path and prevent directory traversal."""
+    """
+    Resolve a local image path and prevent directory traversal.
+
+    Community art lives on the persistent volume rather than under MEMES_DIR,
+    so it has its own prefix.
+    """
+    if path.startswith("/community/"):
+        return _resolve_under(
+            COMMUNITY_ART_DIR,
+            path[len("/community/"):],
+            "Community art directory not available",
+        )
     if path.startswith("/memes/"):
-        if not MEMES_DIR or not MEMES_DIR.is_dir():
-            raise HTTPException(status_code=503, detail="Local memes directory not configured")
-        filename = path[len("/memes/"):]
-        file_path = (MEMES_DIR / filename).resolve()
-        if MEMES_DIR.resolve() not in file_path.parents and file_path != MEMES_DIR.resolve():
-            raise HTTPException(status_code=400, detail="Invalid image path")
-        return file_path
+        return _resolve_under(
+            MEMES_DIR, path[len("/memes/"):], "Local memes directory not configured"
+        )
     raise HTTPException(status_code=400, detail="Invalid image path")

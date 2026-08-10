@@ -1,12 +1,18 @@
 """Community Art service for Professor Pepe."""
 
+import shutil
 import sqlite3
 import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
 
-from core.config import BACKEND_DIR, GEMINI_API_KEY
+from core.config import (
+    BACKEND_DIR,
+    COMMUNITY_ART_DIR,
+    GEMINI_API_KEY,
+    UPLOADS_DIR as CONFIG_UPLOADS_DIR,
+)
 
 try:
     from google import genai
@@ -18,11 +24,32 @@ except ImportError:
 DB_PATH = BACKEND_DIR / "data" / "analytics.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-UPLOADS_DIR = BACKEND_DIR / "data" / "uploads"
+UPLOADS_DIR = CONFIG_UPLOADS_DIR
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-MEMES_COMMUNITY_DIR = BACKEND_DIR / "memes" / "community"
+# Approved art used to be moved to backend/memes/community, which is outside the
+# persistent volume: approving a piece moved its file off the disk and the next
+# deploy deleted it, while its database row kept claiming it was approved.
+MEMES_COMMUNITY_DIR = COMMUNITY_ART_DIR
 MEMES_COMMUNITY_DIR.mkdir(parents=True, exist_ok=True)
+
+_LEGACY_COMMUNITY_DIR = BACKEND_DIR / "memes" / "community"
+
+
+def _migrate_legacy_community_files() -> None:
+    """Move approved art left in the pre-disk location onto the volume."""
+    if not _LEGACY_COMMUNITY_DIR.is_dir():
+        return
+    for old in _LEGACY_COMMUNITY_DIR.iterdir():
+        if not old.is_file():
+            continue
+        target = MEMES_COMMUNITY_DIR / old.name
+        if target.exists():
+            continue
+        try:
+            shutil.move(str(old), str(target))
+        except Exception:
+            pass
 
 _local = threading.local()
 
@@ -49,6 +76,7 @@ def init_db() -> None:
     conn.commit()
 
 init_db()
+_migrate_legacy_community_files()
 
 def generate_description(file_path: Path, mime_type: str) -> str:
     """Generate a description of the image/video using Gemini."""

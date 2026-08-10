@@ -415,8 +415,8 @@ async def get_random_community_art(label: str, request: Request):
     
     filename = str(art['filename'])
     if filename.lower().endswith(('.mp4', '.webm')):
-        url = f"{request.base_url}memes/community/{filename}"
+        url = f"{request.base_url}community/{filename}"
     else:
-        url = f"{request.base_url}api/watermark?path=/memes/community/{filename}"
+        url = f"{request.base_url}api/watermark?path=/community/{filename}"
 
     return {"art": {"url": url, "description": art["description"], "label": art["label"]}}
