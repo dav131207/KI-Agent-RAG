@@ -217,8 +217,19 @@ def ingest_text(text: str, source: str = "manual", chunk_size: int = 500, chunk_
 
 
 def search_context(query: str, limit: int = 3, use_hybrid: bool = True) -> List[str]:
+    """Return only the chunk texts. See search_context_detailed for the rest."""
+    return [hit["text"] for hit in search_context_detailed(query, limit, use_hybrid)]
+
+
+def search_context_detailed(
+    query: str, limit: int = 3, use_hybrid: bool = True
+) -> List[dict]:
     """
-    Search Qdrant for the most relevant chunks.
+    Search Qdrant and return each hit with its identity.
+
+    The chunk_id travels with the text so a later thumbs-down can be attributed
+    to the sources that produced the answer — counting hits alone cannot say
+    which chunk was responsible.
 
     When use_hybrid is True, dense vector search is combined with a simple
     keyword search over payloads and the results are fused with RRF.
@@ -241,14 +252,23 @@ def search_context(query: str, limit: int = 3, use_hybrid: bool = True) -> List[
         )
         vector_points = [r for r in vector_response.points if r.payload]
 
-        if not use_hybrid:
-            return [p.payload.get("text", "") for p in vector_points[:limit]]
+        if use_hybrid:
+            keyword_results = _keyword_search(
+                client, QDRANT_COLLECTION, query, limit=limit * 4
+            )
+            hits = merge_hybrid_results(vector_points, keyword_results, final_limit=limit)
+        else:
+            hits = vector_points[:limit]
 
-        keyword_results = _keyword_search(
-            client, QDRANT_COLLECTION, query, limit=limit * 4
-        )
-        fused = merge_hybrid_results(vector_points, keyword_results, final_limit=limit)
-        return [p.payload.get("text", "") for p in fused if p.payload]
+        return [
+            {
+                "chunk_id": p.payload.get("chunk_id") or str(p.id),
+                "text": p.payload.get("text", ""),
+                "source": p.payload.get("source", ""),
+            }
+            for p in hits
+            if p.payload
+        ]
     except Exception:
         return []
 

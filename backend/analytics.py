@@ -471,6 +471,146 @@ def get_summary(days: int = 7) -> dict[str, Any]:
     }
 
 
+def get_knowledge_gaps(days: int = 30, limit: int = 30) -> list[dict[str, Any]]:
+    """
+    Questions rated thumbs-down that had no retrieved context.
+
+    A bad answer with zero chunks is the clearest signal available: the
+    knowledge base simply had nothing to say, so this is a list of what to
+    ingest next rather than a retrieval problem to tune.
+    """
+    conn = _get_conn()
+    since = (datetime.utcnow() - timedelta(days=days)).isoformat()
+
+    rows = conn.execute(
+        """
+        SELECT user_message, message, timestamp, language
+        FROM events
+        WHERE timestamp >= ?
+          AND event_type = 'feedback'
+          AND feedback = 'thumbs_down'
+          AND user_message IS NOT NULL
+          AND COALESCE(CAST(json_extract(metadata, '$.rag_chunk_count') AS INTEGER), 0) = 0
+        ORDER BY timestamp DESC
+        LIMIT ?
+        """,
+        (since, limit),
+    ).fetchall()
+
+    return [
+        {
+            "question": row["user_message"],
+            "answer": row["message"],
+            "timestamp": row["timestamp"],
+            "language": row["language"],
+            "keywords": _extract_keywords(row["user_message"]),
+        }
+        for row in rows
+    ]
+
+
+def get_chunk_quality(days: int = 30, limit: int = 25) -> list[dict[str, Any]]:
+    """
+    Rate each knowledge chunk by the feedback on answers that used it.
+
+    Requires chunk_ids on the feedback event; ratings recorded before that was
+    logged simply do not appear. Chunks that keep showing up under thumbs-down
+    are candidates for rewriting or removal.
+    """
+    conn = _get_conn()
+    since = (datetime.utcnow() - timedelta(days=days)).isoformat()
+
+    rows = conn.execute(
+        """
+        SELECT
+            json_each.value AS chunk_id,
+            SUM(CASE WHEN feedback = 'thumbs_up' THEN 1 ELSE 0 END) AS up,
+            SUM(CASE WHEN feedback = 'thumbs_down' THEN 1 ELSE 0 END) AS down,
+            COUNT(*) AS total
+        FROM events, json_each(json_extract(metadata, '$.chunk_ids'))
+        WHERE timestamp >= ?
+          AND event_type = 'feedback'
+          AND json_extract(metadata, '$.chunk_ids') IS NOT NULL
+        GROUP BY chunk_id
+        ORDER BY down DESC, total DESC
+        LIMIT ?
+        """,
+        (since, limit),
+    ).fetchall()
+
+    return [
+        {
+            "chunk_id": row["chunk_id"],
+            "up": row["up"] or 0,
+            "down": row["down"] or 0,
+            "total": row["total"] or 0,
+            "score": round((row["up"] or 0) / row["total"], 2) if row["total"] else None,
+        }
+        for row in rows
+    ]
+
+
+def get_feedback_reasons(days: int = 30) -> dict[str, int]:
+    """Count the reasons given alongside a thumbs-down."""
+    conn = _get_conn()
+    since = (datetime.utcnow() - timedelta(days=days)).isoformat()
+
+    rows = conn.execute(
+        """
+        SELECT json_extract(metadata, '$.reason') AS reason, COUNT(*) AS count
+        FROM events
+        WHERE timestamp >= ?
+          AND event_type = 'feedback'
+          AND json_extract(metadata, '$.reason') IS NOT NULL
+        GROUP BY reason
+        ORDER BY count DESC
+        """,
+        (since,),
+    ).fetchall()
+    return {row["reason"]: row["count"] for row in rows}
+
+
+def get_eval_cases_from_feedback(days: int = 90) -> list[dict[str, Any]]:
+    """
+    Build retrieval eval cases from thumbs-up answers.
+
+    eval_cases.json ships with empty label lists, so precision and recall are
+    currently measured against nothing. A positively rated answer is evidence
+    that the chunks behind it were the right ones, which is exactly the label
+    the evaluator needs.
+    """
+    conn = _get_conn()
+    since = (datetime.utcnow() - timedelta(days=days)).isoformat()
+
+    rows = conn.execute(
+        """
+        SELECT user_message, metadata
+        FROM events
+        WHERE timestamp >= ?
+          AND event_type = 'feedback'
+          AND feedback = 'thumbs_up'
+          AND user_message IS NOT NULL
+          AND json_extract(metadata, '$.chunk_ids') IS NOT NULL
+        ORDER BY timestamp DESC
+        """,
+        (since,),
+    ).fetchall()
+
+    cases: dict[str, set] = {}
+    for row in rows:
+        try:
+            chunk_ids = json.loads(row["metadata"]).get("chunk_ids") or []
+        except (ValueError, TypeError):
+            continue
+        if chunk_ids:
+            cases.setdefault(row["user_message"], set()).update(chunk_ids)
+
+    return [
+        {"query": query, "relevant_chunk_ids": sorted(ids)}
+        for query, ids in cases.items()
+    ]
+
+
 def get_feedback_export(days: int = 90) -> list[dict[str, Any]]:
     """Return every feedback event in the window, shaped for RAG evaluation pipelines.
 

@@ -11,7 +11,15 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from PIL import Image
 
-from analytics import get_feedback_export, get_summary, track_event
+from analytics import (
+    get_chunk_quality,
+    get_eval_cases_from_feedback,
+    get_feedback_export,
+    get_feedback_reasons,
+    get_knowledge_gaps,
+    get_summary,
+    track_event,
+)
 from core.auth import check_admin_auth
 from api.schemas import (
     ChatRequest,
@@ -43,7 +51,11 @@ from services.language_service import (
     resolve_target_language,
     translate_text,
 )
-from services.rag_service import get_random_pepe_meme, search_context, search_pepe_memes
+from services.rag_service import (
+    get_random_pepe_meme,
+    search_context_detailed,
+    search_pepe_memes,
+)
 from rag import ingest_text
 
 router = APIRouter()
@@ -120,6 +132,39 @@ async def analytics_summary(request: Request, days: int = 7):
     return get_summary(days=days)
 
 
+@router.get("/analytics/learning")
+async def analytics_learning(request: Request, days: int = 30):
+    """
+    Report what the feedback says about the knowledge base.
+
+    Read-only on purpose: nothing here changes how answers are generated. The
+    app is public, so ratings can be spammed, and feedback should inform a
+    decision you make rather than silently steer the agent.
+    """
+    auth_header = request.headers.get("Authorization")
+    check_admin_auth(auth_header)
+    return {
+        "days": days,
+        "knowledge_gaps": get_knowledge_gaps(days=days),
+        "chunk_quality": get_chunk_quality(days=days),
+        "feedback_reasons": get_feedback_reasons(days=days),
+        "eval_cases_available": len(get_eval_cases_from_feedback(days=max(days, 90))),
+    }
+
+
+@router.get("/analytics/eval-cases")
+async def analytics_eval_cases(request: Request, days: int = 90):
+    """Export retrieval eval cases derived from thumbs-up answers."""
+    auth_header = request.headers.get("Authorization")
+    check_admin_auth(auth_header)
+    cases = get_eval_cases_from_feedback(days=days)
+    return Response(
+        content=json.dumps(cases, ensure_ascii=False, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="eval_cases.json"'},
+    )
+
+
 @router.get("/analytics/export")
 async def analytics_export(request: Request, days: int = 90, format: str = "json"):
     """Export feedback events (question + response + rating) for a RAG eval pipeline."""
@@ -149,18 +194,25 @@ async def chat(req: ChatRequest, request: Request):
     """Handle a chat message and stream or return the LLM response."""
     context = ""
     rag_chunk_count = 0
+    chunk_ids: list[str] = []
     if req.use_rag:
-        chunks = search_context(req.message, limit=3)
-        rag_chunk_count = len(chunks)
-        if chunks:
-            context = "\n\n---\n\n".join(chunks)
+        hits = search_context_detailed(req.message, limit=3)
+        rag_chunk_count = len(hits)
+        chunk_ids = [h["chunk_id"] for h in hits if h.get("chunk_id")]
+        if hits:
+            context = "\n\n---\n\n".join(h["text"] for h in hits)
 
     track_event(
         client_ip=get_client_host(request),
         event_type="rag_retrieval",
         message=req.message,
         session_id=request.cookies.get("pepe_session"),
-        metadata={"chunk_count": rag_chunk_count, "use_rag": req.use_rag},
+        # chunk_ids let a later thumbs-down be traced back to its sources.
+        metadata={
+            "chunk_count": rag_chunk_count,
+            "chunk_ids": chunk_ids,
+            "use_rag": req.use_rag,
+        },
     )
 
     target_language = await resolve_target_language(
@@ -181,9 +233,18 @@ async def chat(req: ChatRequest, request: Request):
         return StreamingResponse(
             response,
             media_type="text/plain",
-            headers={"X-RAG-Chunks": str(rag_chunk_count)},
+            headers={
+                "X-RAG-Chunks": str(rag_chunk_count),
+                # Echoed back so the client can attach them to a rating.
+                "X-RAG-Chunk-Ids": ",".join(chunk_ids),
+                "Access-Control-Expose-Headers": "X-RAG-Chunks, X-RAG-Chunk-Ids",
+            },
         )
-    return {"text": response, "rag_chunk_count": rag_chunk_count}
+    return {
+        "text": response,
+        "rag_chunk_count": rag_chunk_count,
+        "rag_chunk_ids": chunk_ids,
+    }
 
 
 @router.post("/image")

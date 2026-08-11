@@ -20,6 +20,8 @@ RATE_LIMITS = {
     "/api/emote": (60, 60),
     "/api/event": (120, 60),
     "/api/analytics": (60, 60),
+    "/api/analytics/learning": (60, 60),
+    "/api/analytics/eval-cases": (20, 60),
     "/api/watermark": (100, 60),
     "/api/chain-stats": (60, 60),
     "/api/chain-stats.png": (100, 60),

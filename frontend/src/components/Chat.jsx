@@ -263,6 +263,9 @@ export default function Chat({ isDark }) {
       }
 
       const ragChunks = Number(response.headers.get('X-RAG-Chunks') || 0)
+      const ragChunkIds = (response.headers.get('X-RAG-Chunk-Ids') || '')
+        .split(',')
+        .filter(Boolean)
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let fullText = ''
@@ -289,6 +292,7 @@ export default function Chat({ isDark }) {
           emote: emoteUrl,
           time: formatTime(new Date()),
           ragChunks,
+          ragChunkIds,
         },
       ])
       setTypingText('')
@@ -375,7 +379,7 @@ export default function Chat({ isDark }) {
               <div key={idx} onClick={(e) => {
                 if (e.target.tagName === 'IMG') setModalImage(e.target.src)
               }}>
-                <Message msg={msg} isDark={isDark} userMessage={precedingUserMessage} ragChunks={msg.ragChunks} />
+                <Message msg={msg} isDark={isDark} userMessage={precedingUserMessage} ragChunks={msg.ragChunks} ragChunkIds={msg.ragChunkIds} />
               </div>
             )
           })}

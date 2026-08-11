@@ -38,19 +38,56 @@ const markdownComponents = {
   },
 }
 
-export default function Message({ msg, isDark, userMessage, ragChunks }) {
+// A thumbs-down says an answer was bad but not what was wrong with it, and
+// "bad" alone gives nothing to act on. Four fixed reasons keep the extra tap
+// cheap while making the signal usable.
+const FEEDBACK_REASONS = [
+  { id: 'wrong', label: 'Wrong' },
+  { id: 'unclear', label: 'Unclear' },
+  { id: 'incomplete', label: 'Incomplete' },
+  { id: 'tone', label: 'Wrong tone' },
+]
+
+// Answers were stored truncated at 200 characters, which is too little to
+// reuse as an example of a good reply. Still capped, just high enough to keep
+// the row size sane.
+const FEEDBACK_TEXT_LIMIT = 4000
+
+export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkIds }) {
   const isUser = msg.role === 'user'
   const [feedback, setFeedback] = useState(null)
+  const [askReason, setAskReason] = useState(false)
+
+  const sendFeedback = (type, reason) => {
+    const metadata = {}
+    if (typeof ragChunks === 'number') metadata.rag_chunk_count = ragChunks
+    if (ragChunkIds?.length) metadata.chunk_ids = ragChunkIds
+    if (reason) metadata.reason = reason
+
+    trackEvent('feedback', {
+      feedback: type,
+      message: msg.text?.slice(0, FEEDBACK_TEXT_LIMIT),
+      user_message: userMessage?.slice(0, FEEDBACK_TEXT_LIMIT),
+      metadata: Object.keys(metadata).length ? metadata : undefined,
+    })
+  }
 
   const handleFeedback = (type) => {
     if (feedback) return
     setFeedback(type)
-    trackEvent('feedback', {
-      feedback: type,
-      message: msg.text?.slice(0, 200),
-      user_message: userMessage?.slice(0, 200),
-      metadata: typeof ragChunks === 'number' ? { rag_chunk_count: ragChunks } : undefined,
-    })
+    if (type === 'thumbs_down') {
+      // Record it immediately; the reason is an optional refinement so a user
+      // who ignores the prompt still leaves a usable rating behind.
+      sendFeedback(type, null)
+      setAskReason(true)
+    } else {
+      sendFeedback(type, null)
+    }
+  }
+
+  const handleReason = (reason) => {
+    setAskReason(false)
+    sendFeedback('thumbs_down_reason', reason)
   }
 
   const textWithLinks = linkify(msg.text)
@@ -122,6 +159,30 @@ export default function Message({ msg, isDark, userMessage, ragChunks }) {
             >
               <ThumbsDown size={12} className="sm:w-3.5 sm:h-3.5" />
             </button>
+
+            {askReason && (
+              <div className="flex flex-wrap items-center gap-1 ml-1">
+                <span className="text-[9px] sm:text-[10px] text-brand-400 dark:text-brand-500">
+                  What was wrong?
+                </span>
+                {FEEDBACK_REASONS.map((reason) => (
+                  <button
+                    key={reason.id}
+                    onClick={() => handleReason(reason.id)}
+                    className="px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] border border-white/10 text-brand-400 hover:text-white hover:border-accent/50 hover:bg-accent/10 transition-colors"
+                  >
+                    {reason.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setAskReason(false)}
+                  className="px-1 text-[9px] sm:text-[10px] text-brand-500 hover:text-brand-300 transition-colors"
+                  aria-label="Skip"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
           </div>
         )}
         <span className="text-[9px] sm:text-[10px] text-brand-400 dark:text-brand-500 px-1">
