@@ -15,8 +15,9 @@ T = TypeVar("T")
 class TTLCache:
     """Thread-safe in-memory cache with time-to-live."""
 
-    def __init__(self, default_ttl: int = 3600):
+    def __init__(self, default_ttl: int = 3600, sweep_at: int = 1000):
         self._default_ttl = default_ttl
+        self._sweep_at = sweep_at
         self._store: dict[str, tuple[Any, float]] = {}
 
     def _key(self, *parts: Any) -> str:
@@ -36,8 +37,20 @@ class TTLCache:
             return None
         return value
 
+    def _evict_expired(self) -> None:
+        """Drop entries past their TTL.
+
+        get() only expires the key it was asked for, so a key that is never
+        requested again stays forever. Writes sweep the rest.
+        """
+        now = time.time()
+        for key in [k for k, (_, expires) in self._store.items() if now > expires]:
+            del self._store[key]
+
     def set(self, value: Any, *parts: Any, ttl: Optional[int] = None) -> None:
         """Store a value with an optional custom TTL."""
+        if len(self._store) >= self._sweep_at:
+            self._evict_expired()
         key = self._key(*parts)
         expires = time.time() + (ttl if ttl is not None else self._default_ttl)
         self._store[key] = (value, expires)

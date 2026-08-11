@@ -27,6 +27,14 @@ def _get_conn() -> sqlite3.Connection:
     if not hasattr(_local, "conn") or _local.conn is None:
         _local.conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
         _local.conn.row_factory = sqlite3.Row
+        # Every request writes an event from a worker thread while the
+        # dashboard reads. The default rollback journal makes readers and the
+        # writer block each other; WAL lets them run concurrently. NORMAL
+        # trades an fsync per commit for durability only against OS-level
+        # crashes, which is the right side of the trade for analytics.
+        _local.conn.execute("PRAGMA journal_mode=WAL")
+        _local.conn.execute("PRAGMA synchronous=NORMAL")
+        _local.conn.execute("PRAGMA busy_timeout=5000")
     return _local.conn
 
 
@@ -71,6 +79,14 @@ def init_db() -> None:
     conn.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id)
+        """
+    )
+    # Nearly every dashboard query filters on both columns together. The
+    # single-column indexes above can only serve one of them, leaving a scan
+    # over the rest of the window.
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_events_type_time ON events(event_type, timestamp)
         """
     )
     

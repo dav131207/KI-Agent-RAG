@@ -10,7 +10,12 @@ from fastapi.responses import JSONResponse
 
 from services.language_service import get_client_host
 
+# Keyed by "<ip>:<path>". Every new visitor adds a key and nothing removed one,
+# so the store grew for the lifetime of the process; entries are swept once
+# their window has passed.
 _rate_limit_store: dict[str, list[float]] = {}
+_last_sweep = 0.0
+SWEEP_INTERVAL_SECONDS = 300
 
 RATE_LIMITS = {
     "/api/chat": (30, 60),
@@ -38,6 +43,17 @@ def _rate_limit_key(request: Request) -> str:
     return f"{ip}:{request.url.path}"
 
 
+def _sweep_expired(now: float, window_seconds: int) -> None:
+    """Drop keys whose whole window has passed, at most every few minutes."""
+    global _last_sweep
+    if now - _last_sweep < SWEEP_INTERVAL_SECONDS:
+        return
+    _last_sweep = now
+    cutoff = now - window_seconds
+    for key in [k for k, ts in _rate_limit_store.items() if not ts or ts[-1] <= cutoff]:
+        del _rate_limit_store[key]
+
+
 def is_rate_limited(request: Request) -> tuple[bool, dict[str, Any]]:
     """Check whether the current request exceeds its per-IP rate limit."""
     path = request.url.path
@@ -49,6 +65,8 @@ def is_rate_limited(request: Request) -> tuple[bool, dict[str, Any]]:
     key = _rate_limit_key(request)
     now = time.time()
     window_start = now - window_seconds
+
+    _sweep_expired(now, window_seconds)
 
     timestamps = _rate_limit_store.get(key, [])
     timestamps = [ts for ts in timestamps if ts > window_start]

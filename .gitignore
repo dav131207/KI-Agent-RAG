@@ -51,3 +51,8 @@ backend/memes/*
 
 # Runtime marker for the data-directory persistence check
 backend/data/storage_marker.json
+
+# SQLite databases are runtime state, not source
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm

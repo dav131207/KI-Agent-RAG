@@ -15,7 +15,18 @@ from core.config import DEFAULT_MODEL
 from core.providers import get_llm_provider
 from core.providers.base import LLMError
 
+# One entry per client IP and nothing ever removed one, so this grew for the
+# life of the process. Bounded with FIFO eviction: geolocation is a cheap
+# lookup, so losing the oldest entries costs one extra request at worst.
 _geo_cache: dict[str, str] = {}
+GEO_CACHE_MAX = 5000
+
+
+def _remember_geo(client_host: str, language: str) -> None:
+    """Cache a lookup, evicting the oldest entry when full."""
+    if len(_geo_cache) >= GEO_CACHE_MAX:
+        _geo_cache.pop(next(iter(_geo_cache)), None)
+    _geo_cache[client_host] = language
 
 COUNTRY_TO_LANGUAGE = {
     "DE": "German",
@@ -100,7 +111,7 @@ async def detect_language_from_ip(http_client: httpx.AsyncClient, client_host: s
         if data.get("status") == "success":
             country = data.get("countryCode", "")
             language = COUNTRY_TO_LANGUAGE.get(country, "English")
-            _geo_cache[client_host] = language
+            _remember_geo(client_host, language)
             return language
     except Exception:
         pass
