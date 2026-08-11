@@ -309,9 +309,118 @@ function FeedbackList({ items }) {
   )
 }
 
+/** Questions that were rated badly with nothing retrieved — an ingest list. */
+function KnowledgeGapList({ items }) {
+  if (!items?.length) {
+    return (
+      <p className="text-xs text-brand-500 dark:text-brand-400">
+        No gaps recorded. These only appear when an answer is rated down and no
+        knowledge was retrieved for it.
+      </p>
+    )
+  }
+  return (
+    <div className="space-y-2 max-h-[420px] overflow-y-auto">
+      {items.map((gap, i) => (
+        <div key={i} className="p-2.5 rounded-lg bg-brand-50 dark:bg-brand-900/50 border border-brand-100 dark:border-white/5">
+          <p className="text-xs font-medium text-brand-900 dark:text-brand-50 break-words">
+            {gap.question}
+          </p>
+          {gap.keywords?.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {gap.keywords.map((kw) => (
+                <span key={kw} className="px-1.5 py-0.5 rounded text-[10px] bg-brand-200/60 dark:bg-white/10 text-brand-600 dark:text-brand-300">
+                  {kw}
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="mt-1 text-[10px] text-brand-400 dark:text-brand-500">
+            {gap.timestamp?.slice(0, 16).replace('T', ' ')}
+            {gap.language ? ` · ${gap.language}` : ''}
+          </p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Per-chunk ratings. Ratings recorded before chunk ids were logged are absent. */
+function ChunkQualityList({ items }) {
+  if (!items?.length) {
+    return (
+      <p className="text-xs text-brand-500 dark:text-brand-400">
+        Nothing yet. Only ratings given after chunk ids started being logged can
+        be attributed to a source.
+      </p>
+    )
+  }
+  return (
+    <div className="space-y-1.5 max-h-[420px] overflow-y-auto">
+      {items.map((chunk) => {
+        // Score is share of positive ratings; colour marks the problem cases.
+        const bad = chunk.score !== null && chunk.score < 0.5
+        const good = chunk.score !== null && chunk.score >= 0.8
+        return (
+          <div key={chunk.chunk_id} className="flex items-center gap-2 p-2 rounded-lg bg-brand-50 dark:bg-brand-900/50 border border-brand-100 dark:border-white/5">
+            <code className="text-[10px] font-mono text-brand-500 dark:text-brand-400 truncate flex-1 min-w-0">
+              {chunk.chunk_id}
+            </code>
+            <span className="text-[10px] text-green-600 dark:text-green-400 shrink-0">↑{chunk.up}</span>
+            <span className="text-[10px] text-red-500 dark:text-red-400 shrink-0">↓{chunk.down}</span>
+            <span
+              className={`text-[10px] font-bold w-9 text-right shrink-0 ${
+                bad ? 'text-red-500' : good ? 'text-green-600 dark:text-green-400' : 'text-brand-500'
+              }`}
+            >
+              {chunk.score === null ? '—' : `${Math.round(chunk.score * 100)}%`}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function EvalCasesButton({ token, days, count }) {
+  const [downloading, setDownloading] = useState(false)
+
+  const download = async () => {
+    setDownloading(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/analytics/eval-cases?days=${days}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Download failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'eval_cases.json'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      // Surfaced by the disabled state returning; nothing else to do here.
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  return (
+    <button
+      onClick={download}
+      disabled={downloading || !count}
+      className="text-xs px-3 py-1 rounded-lg bg-accent text-brand-950 font-bold hover:opacity-90 transition-opacity disabled:opacity-40"
+    >
+      {downloading ? 'Preparing…' : `Download ${count} cases`}
+    </button>
+  )
+}
+
 export default function AdminDashboard() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || null)
   const [data, setData] = useState(null)
+  const [learning, setLearning] = useState(null)
   const [error, setError] = useState(null)
   const [days, setDays] = useState(7)
   const [activeTab, setActiveTab] = useState('analytics')
@@ -321,6 +430,7 @@ export default function AdminDashboard() {
     localStorage.removeItem(TOKEN_KEY)
     setToken(null)
     setData(null)
+    setLearning(null)
   }
 
   useEffect(() => {
@@ -337,6 +447,15 @@ export default function AdminDashboard() {
       })
       .then(setData)
       .catch(setError)
+
+    // Separate endpoint: the learning report aggregates differently and should
+    // not delay or fail the main summary.
+    fetch(`${API_BASE}/api/analytics/learning?days=${days}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then(setLearning)
+      .catch(() => setLearning(null))
   }, [days, token])
 
   if (!token) return <LoginForm onLogin={handleLogin} />
@@ -393,6 +512,12 @@ export default function AdminDashboard() {
                 Analytics
               </button>
               <button
+                onClick={() => setActiveTab('learning')}
+                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${activeTab === 'learning' ? 'bg-white dark:bg-brand-700 shadow-sm' : 'text-brand-500 hover:text-brand-900 dark:hover:text-brand-100'}`}
+              >
+                Learning
+              </button>
+              <button
                 onClick={() => setActiveTab('art')}
                 className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${activeTab === 'art' ? 'bg-white dark:bg-brand-700 shadow-sm' : 'text-brand-500 hover:text-brand-900 dark:hover:text-brand-100'}`}
               >
@@ -401,7 +526,7 @@ export default function AdminDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {activeTab === 'analytics' && (
+            {activeTab !== 'art' && (
               <select
                 value={days}
                 onChange={(e) => setDays(Number(e.target.value))}
@@ -427,6 +552,79 @@ export default function AdminDashboard() {
 
         {activeTab === 'art' ? (
           <ArtApprovals token={token} />
+        ) : activeTab === 'learning' ? (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+              <StatTile label="Knowledge Gaps" value={learning?.knowledge_gaps?.length ?? '—'} />
+              <StatTile label="Rated Chunks" value={learning?.chunk_quality?.length ?? '—'} />
+              <StatTile
+                label="Weak Chunks"
+                value={
+                  learning?.chunk_quality
+                    ? learning.chunk_quality.filter((c) => c.score !== null && c.score < 0.5).length
+                    : '—'
+                }
+                accentClass="text-red-500"
+              />
+              <StatTile label="Eval Cases" value={learning?.eval_cases_available ?? '—'} />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
+              <Card
+                title="Knowledge Gaps"
+                subtitle="Rated down with nothing retrieved — the knowledge base had no answer"
+              >
+                <KnowledgeGapList items={learning?.knowledge_gaps} />
+              </Card>
+              <Card
+                title="Chunk Quality"
+                subtitle="How answers using each chunk were rated"
+              >
+                <ChunkQualityList items={learning?.chunk_quality} />
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+              <Card title="Why answers were rated down" subtitle="Reason given after a thumbs-down">
+                <HBarList
+                  data={learning?.feedback_reasons}
+                  emptyLabel="No reasons given yet."
+                />
+              </Card>
+              <Card
+                title="Retrieval Eval Cases"
+                subtitle="Built from thumbs-up answers, for measuring retrieval changes"
+                action={
+                  <EvalCasesButton
+                    token={token}
+                    days={days}
+                    count={learning?.eval_cases_available || 0}
+                  />
+                }
+              >
+                <p className="text-xs text-brand-500 dark:text-brand-400">
+                  A positively rated answer is evidence its chunks were the right
+                  ones. Drop the file into{' '}
+                  <code className="bg-brand-100 dark:bg-brand-700 px-1 rounded">
+                    backend/rag/eval_cases.json
+                  </code>{' '}
+                  and run{' '}
+                  <code className="bg-brand-100 dark:bg-brand-700 px-1 rounded">
+                    scripts/eval_rag.py
+                  </code>{' '}
+                  to measure whether a change to chunking or retrieval actually
+                  helped. The file shipped with empty labels, so it currently
+                  measures nothing.
+                </p>
+              </Card>
+            </div>
+
+            <p className="mt-6 text-[11px] text-brand-500 dark:text-brand-400">
+              This report is read-only by design. Ratings come from a public app
+              and can be spammed, so nothing here changes how answers are
+              generated on its own.
+            </p>
+          </>
         ) : (
           <>
             {/* KPI row */}
