@@ -1,5 +1,6 @@
 """Chat and content generation services."""
 
+import asyncio
 import logging
 import re
 from typing import AsyncGenerator, Optional
@@ -301,7 +302,7 @@ def _hard_wrap(chunk: str, limit: int) -> list[str]:
     return out
 
 
-def compress_to_limit(text: str, limit: int = TWEET_LIMIT) -> str:
+async def compress_to_limit(text: str, limit: int = TWEET_LIMIT) -> str:
     """
     Ask the model to shorten an over-long single post.
 
@@ -315,7 +316,8 @@ def compress_to_limit(text: str, limit: int = TWEET_LIMIT) -> str:
         provider = get_llm_provider()
         if not provider.is_configured:
             return text
-        result = provider.generate(
+        result = await asyncio.to_thread(
+            provider.generate,
             DEFAULT_MODEL,
             [
                 {
@@ -345,7 +347,7 @@ def compress_to_limit(text: str, limit: int = TWEET_LIMIT) -> str:
     return text
 
 
-def enforce_tweet_limit(text: str, limit: int = TWEET_LIMIT, allow_thread: bool = True) -> str:
+async def enforce_tweet_limit(text: str, limit: int = TWEET_LIMIT, allow_thread: bool = True) -> str:
     """
     Guarantee every tweet fits the character limit.
 
@@ -362,7 +364,7 @@ def enforce_tweet_limit(text: str, limit: int = TWEET_LIMIT, allow_thread: bool 
         return text
 
     if not allow_thread:
-        return text if len(text) <= limit else compress_to_limit(text, limit)
+        return text if len(text) <= limit else await compress_to_limit(text, limit)
 
     # An existing thread is already split; leave it alone if every part fits.
     existing = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
@@ -401,7 +403,7 @@ def enforce_tweet_limit(text: str, limit: int = TWEET_LIMIT, allow_thread: bool 
     return "\n\n".join(f"{i}/{total} {chunk}" for i, chunk in enumerate(chunks, 1))
 
 
-def format_social_post(
+async def format_social_post(
     text: str,
     platform: str = "twitter",
     strategy: str = "community",
@@ -425,7 +427,7 @@ def format_social_post(
 
     # Applied after the handle and coin substitutions, since both add characters
     # and can push an otherwise compliant post over the limit.
-    return enforce_tweet_limit(text, allow_thread=post_format != "single")
+    return await enforce_tweet_limit(text, allow_thread=post_format != "single")
 
 
 GET_COINS_TEXTS = {
@@ -493,7 +495,7 @@ async def generate_chat_response(
                     async for chunk in provider.stream(DEFAULT_MODEL, contents, temperature=0.9):
                         full += chunk
                     
-                    final_text = format_social_post(full, platform, strategy, post_format)
+                    final_text = await format_social_post(full, platform, strategy, post_format)
 
                     # Auto-Meme Synergy for Standard Twitter strategy
                     if platform == "twitter" and strategy == "community":
@@ -535,5 +537,5 @@ async def generate_chat_response(
 
     if is_social:
         platform, strategy, post_format = parse_social_params(message)
-        text = format_social_post(text, platform, strategy, post_format)
+        text = await format_social_post(text, platform, strategy, post_format)
     return text

@@ -5,6 +5,8 @@ Handles IP geolocation, Cloudflare country headers and LLM-based language
 identification/translation.
 """
 
+import asyncio
+import re
 from typing import Optional
 
 import httpx
@@ -129,6 +131,69 @@ async def detect_language_from_request(
     return await detect_language_from_ip(http_client, get_client_host(request))
 
 
+# Scripts that identify a language on sight. Checked before any word lists,
+# because a single character range settles it.
+SCRIPT_RANGES = [
+    ("Russian", (0x0400, 0x04FF)),
+    ("Greek", (0x0370, 0x03FF)),
+    ("Hebrew", (0x0590, 0x05FF)),
+    ("Arabic", (0x0600, 0x06FF)),
+    ("Hindi", (0x0900, 0x097F)),
+    ("Bengali", (0x0980, 0x09FF)),
+    ("Tamil", (0x0B80, 0x0BFF)),
+    ("Telugu", (0x0C00, 0x0C7F)),
+    ("Thai", (0x0E00, 0x0E7F)),
+    ("Korean", (0xAC00, 0xD7AF)),
+    ("Japanese", (0x3040, 0x30FF)),
+    ("Chinese", (0x4E00, 0x9FFF)),
+]
+
+# Function words, which are the part of a sentence that stays constant.
+STOPWORDS = {
+    "German": {"der","die","das","und","ist","nicht","ich","du","wir","mit","auf","für","was","wie","aber","noch","schon","auch","sehr","kann","hat","wird","ein","eine","zu","von","im","bei"},
+    "French": {"le","la","les","des","une","est","pas","je","tu","nous","vous","avec","pour","que","qui","mais","dans","sur","plus","très","être","fait","ça","cette"},
+    "Spanish": {"el","los","las","una","es","no","yo","que","con","para","por","pero","como","más","muy","este","esta","son","tiene","hay","están"},
+    "Italian": {"il","lo","gli","una","che","non","sono","con","per","ma","come","più","molto","questo","questa","hanno","essere","anche"},
+    "Portuguese": {"os","as","uma","que","não","com","para","por","mas","como","mais","muito","este","esta","são","tem","você","isso"},
+    "Dutch": {"de","het","een","en","is","niet","ik","wij","met","voor","maar","ook","heel","kan","heeft","wordt","deze","dat"},
+    "Polish": {"nie","jest","się","tak","dla","ale","jak","bardzo","tego","tym","czy","już","tylko","może"},
+    "Turkish": {"bir","ve","bu","için","ile","ama","çok","daha","olarak","var","yok","gibi","kadar"},
+    "Indonesian": {"yang","dan","tidak","ini","itu","untuk","dengan","adalah","saya","kami","bisa","sudah","akan"},
+    "Vietnamese": {"không","là","của","và","có","được","người","những","cho","với","này","một"},
+}
+
+
+def detect_language_heuristically(text: str) -> Optional[str]:
+    """
+    Identify a language without calling a model.
+
+    The LLM detector cost a full round trip before every answer for anyone the
+    geolocation reported as English. Scripts and function words settle almost
+    every real message in microseconds; anything they cannot settle falls back
+    to geolocation, which is a better trade than a second model call.
+    """
+    text = (text or "").strip()
+    if len(text) < 3:
+        return None
+
+    for language, (low, high) in SCRIPT_RANGES:
+        if sum(1 for ch in text if low <= ord(ch) <= high) >= 2:
+            return language
+
+    words = set(re.findall(r"[a-zà-öø-ÿğışçöüńłżźćęą]+", text.lower()))
+    if not words:
+        return None
+
+    best, best_hits = None, 0
+    for language, markers in STOPWORDS.items():
+        hits = len(words & markers)
+        if hits > best_hits:
+            best, best_hits = language, hits
+
+    # One shared word is chance; two is a signal.
+    return best if best_hits >= 2 else None
+
+
 async def detect_language_from_text(text: str) -> Optional[str]:
     """Ask the configured LLM to identify the language of the provided text."""
     cached = cache.get("detect_language_from_text", text)
@@ -181,7 +246,10 @@ async def translate_text(text: Optional[str], language: str) -> Optional[str]:
         return text
 
     try:
-        result = provider.generate(
+        # generate() is synchronous; awaiting it on a thread keeps a
+        # translation from stalling every other request in flight.
+        result = await asyncio.to_thread(
+            provider.generate,
             DEFAULT_MODEL,
             [
                 {
@@ -219,11 +287,14 @@ async def resolve_target_language(
     if geo_language and geo_language != "English":
         return geo_language
 
+    # Geolocation said English, which is also what it returns when it knows
+    # nothing. The last user message decides — by inspection, not by asking a
+    # model, which used to add a full round trip ahead of every answer.
     for turn in reversed(history):
         if turn.get("role") == "user":
             text = turn.get("text", "")
             if text:
-                detected = await detect_language_from_text(text)
+                detected = detect_language_heuristically(text)
                 if detected:
                     return detected
                 break

@@ -1,5 +1,6 @@
 """Google Gemini provider implementation."""
 
+import asyncio
 from typing import AsyncGenerator
 
 from core.config import GEMINI_API_KEY
@@ -57,16 +58,48 @@ class GeminiProvider(LLMProvider):
         return response.text or ""
 
     async def stream(self, model: str, contents: list, **kwargs) -> AsyncGenerator[str, None]:
+        """
+        Yield chunks without blocking the event loop.
+
+        The SDK's stream is a synchronous generator, so iterating it directly
+        from a coroutine held the loop for the whole generation: concurrent
+        requests were served one after another rather than together. It runs on
+        a worker thread and hands chunks over through a queue instead.
+        """
         self._ensure_ready()
         config = None
         if "temperature" in kwargs:
             config = types.GenerateContentConfig(temperature=kwargs["temperature"])
-            
-        for chunk in self._client.models.generate_content_stream(
-            model=model,
-            contents=self._to_gemini_contents(contents),
-            config=config,
-        ):
-            text = chunk.text or ""
-            if text:
-                yield text
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+        done = object()
+
+        def produce() -> None:
+            try:
+                for chunk in self._client.models.generate_content_stream(
+                    model=model,
+                    contents=self._to_gemini_contents(contents),
+                    config=config,
+                ):
+                    text = chunk.text or ""
+                    if text:
+                        # Bounded queue, so a slow reader cannot let the
+                        # producer buffer an entire response in memory.
+                        asyncio.run_coroutine_threadsafe(queue.put(text), loop).result()
+            except Exception as exc:  # surfaced to the consumer below
+                asyncio.run_coroutine_threadsafe(queue.put(exc), loop).result()
+            finally:
+                asyncio.run_coroutine_threadsafe(queue.put(done), loop).result()
+
+        producer = loop.run_in_executor(None, produce)
+        try:
+            while True:
+                item = await queue.get()
+                if item is done:
+                    break
+                if isinstance(item, Exception):
+                    raise LLMError(f"Gemini stream failed: {item}")
+                yield item
+        finally:
+            await producer
