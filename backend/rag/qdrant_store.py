@@ -9,6 +9,7 @@ Supports both Qdrant Cloud and local Qdrant instances.
 import hashlib
 import os
 import random
+import time
 import uuid
 from pathlib import Path
 from typing import List, Optional
@@ -303,6 +304,45 @@ def search_pepe_memes(query: str, limit: int = 10) -> List[dict]:
         return []
 
 
+_pepe_meme_ids: list = []
+_pepe_meme_ids_at: float = 0.0
+PEPE_ID_CACHE_TTL = 600
+PEPE_ID_CACHE_MAX = 20000
+
+
+def _get_pepe_meme_ids(client: QdrantClient) -> list:
+    """
+    Return the real point ids, cached for a few minutes.
+
+    Guessing ids from the point count assumed they run 0..count-1. The
+    collection is uploaded with ids starting at 1, so id 0 never existed and the
+    highest id was unreachable — and any collection using UUIDs missed entirely.
+    Reading the ids costs one scroll per cache period and is exact.
+    """
+    global _pepe_meme_ids, _pepe_meme_ids_at
+    now = time.time()
+    if _pepe_meme_ids and now - _pepe_meme_ids_at < PEPE_ID_CACHE_TTL:
+        return _pepe_meme_ids
+
+    ids, offset = [], None
+    while len(ids) < PEPE_ID_CACHE_MAX:
+        points, offset = client.scroll(
+            collection_name=PEPE_MEMES_COLLECTION,
+            limit=1000,
+            offset=offset,
+            with_payload=False,
+            with_vectors=False,
+        )
+        if not points:
+            break
+        ids.extend(p.id for p in points)
+        if offset is None:
+            break
+
+    _pepe_meme_ids, _pepe_meme_ids_at = ids, now
+    return ids
+
+
 def get_random_pepe_meme(max_attempts: int = 10) -> Optional[dict]:
     """Return a truly random, non-politically-sensitive pepe meme."""
     client = get_qdrant_client()
@@ -310,14 +350,11 @@ def get_random_pepe_meme(max_attempts: int = 10) -> Optional[dict]:
         return None
 
     try:
-        total = client.count(collection_name=PEPE_MEMES_COLLECTION).count
-        if total == 0:
+        ids = _get_pepe_meme_ids(client)
+        if not ids:
             return None
 
-        # Fast path: the ingest scripts assign sequential ids, so a direct
-        # lookup usually hits without scanning the collection.
-        for _ in range(max_attempts):
-            random_id = random.randint(0, total - 1)
+        for random_id in random.sample(ids, min(max_attempts, len(ids))):
             records = client.retrieve(
                 collection_name=PEPE_MEMES_COLLECTION,
                 ids=[random_id],
@@ -327,25 +364,6 @@ def get_random_pepe_meme(max_attempts: int = 10) -> Optional[dict]:
                 payload = record.payload
                 if payload and payload.get("is_politically_sensitive") is False:
                     return payload
-
-        # Fallback: ids are sparse (points deleted, or ingested with UUIDs),
-        # so sample from an actual page of the collection instead.
-        points, _ = client.scroll(
-            collection_name=PEPE_MEMES_COLLECTION,
-            with_payload=True,
-            limit=256,
-            scroll_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key="is_politically_sensitive",
-                        match=MatchValue(value=False),
-                    )
-                ]
-            ),
-        )
-        candidates = [p.payload for p in points if p.payload]
-        if candidates:
-            return random.choice(candidates)
     except Exception:
         pass
 

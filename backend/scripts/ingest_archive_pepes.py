@@ -42,6 +42,26 @@ from rag.qdrant_store import (
 
 ARCHIVE_LIST_URL = "https://archive.org/download/PepeImgurAlbum/Pepe%20-%20Imgur.zip/?format=json"
 ARCHIVE_BASE = "https://archive.org/download/PepeImgurAlbum/Pepe%20-%20Imgur.zip/"
+
+WIPE_CONFIRM_ENV = "ALLOW_PEPE_MEMES_WIPE"
+
+
+def _confirm_wipe() -> None:
+    """Refuse to drop pepe_memes unless it was explicitly allowed.
+
+    The collection is filled by an external labelling pipeline — one embedding
+    per image from its description, OCR text, keywords and mood. Re-running an
+    ingest script here replaced all of it with a single shared vector, silently
+    destroying work these scripts cannot reproduce.
+    """
+    if os.getenv(WIPE_CONFIRM_ENV, "").lower() not in ("1", "true", "yes"):
+        print(f"\n\u26d4 Refusing to delete '{PEPE_MEMES_COLLECTION}'.")
+        print("   It may hold per-image labels that this script cannot rebuild.")
+        print(f"   Check first:  python scripts/inspect_pepe_memes.py")
+        print(f"   Override with: {WIPE_CONFIRM_ENV}=1\n")
+        raise SystemExit(1)
+
+
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
 
 
@@ -72,6 +92,8 @@ def fetch_image_urls() -> list[str]:
 
 
 def ingest(urls: list[str], recreate: bool = True, batch_size: int = 100) -> int:
+    if recreate:
+        _confirm_wipe()
     if not ensure_pepe_memes_collection(recreate=recreate):
         print("❌ Could not connect to Qdrant or create collection.")
         print("   Make sure QDRANT_URL and GEMINI_API_KEY are set.")
