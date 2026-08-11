@@ -113,6 +113,23 @@ GOAL_INSTRUCTIONS = {
         "about price. The question must follow from the post rather than being bolted on. "
         "CRITICAL: Do NOT use any cashtags (like $PEP)."
     ),
+    "poll": (
+        "GOAL — RUN A COMMUNITY POLL: Ask the audience to place themselves on a short scale, so "
+        "answering costs one tap.\n"
+        "1. STRUCTURE: a one-line question, then 3-5 ordered tiers, then one closing line that "
+        "gives people a reason to read the other answers.\n"
+        "2. ALWAYS INCLUDE AN ENTRY TIER for people who just arrived, and word it as a welcome "
+        "rather than an admission of being late. A scale that starts at 'six months' tells "
+        "newcomers they missed it, which loses exactly the people worth attracting.\n"
+        "3. CHEAP TO ANSWER: a tier must be answerable with a single number, word or emoji. Never "
+        "ask for an explanation.\n"
+        "4. NO ENGAGEMENT BAIT WORDING: do not write 'reply with', 'comment below' or 'drop a'. "
+        "An ordered scale already implies the reply, and platforms demote the explicit ask.\n"
+        "5. EMOJI: using one emoji per tier as the scale itself is fine — that is structure. Do "
+        "not add decorative emoji anywhere else.\n"
+        "6. Keep the tiers genuinely distinguishable, and never make seniority the only thing "
+        "worth being."
+    ),
     "data": (
         "GOAL — SHOW NETWORK DATA: Write a highly analytical post for the Dogecoin/Litecoin "
         "mining community and cypherpunks.\n"

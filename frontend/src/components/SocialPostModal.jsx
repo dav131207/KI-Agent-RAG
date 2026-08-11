@@ -22,6 +22,7 @@ const GOALS = [
   { id: 'Explain', label: 'Explain something', desc: 'Break the tech down so anyone can follow it' },
   { id: 'Outside', label: 'Reach people outside crypto', desc: 'No slang — framed for a tech or public-sector audience' },
   { id: 'Discussion', label: 'Start a discussion', desc: 'Ends on a question that gets people replying' },
+  { id: 'Poll', label: 'Run a community poll', desc: 'A short scale everyone can answer in one tap' },
   { id: 'Data', label: 'Show network data', desc: 'Hashrate and mining, with a live chart attached' },
   { id: 'Reply', label: 'Reply to someone', desc: 'A useful reply to somebody else\'s post' },
   { id: 'Provoke', label: 'Provoke disagreement', desc: 'A sharp take people will want to correct' },
@@ -118,6 +119,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
     Data: 'E.g. hashrate, block times, Scrypt economics...',
     Provoke: 'Which common assumption should we push back on?',
     Explain: 'What should we explain?',
+    Poll: 'What should people place themselves on? (e.g. how long they have been here)',
   }
 
   const placeholder = {
