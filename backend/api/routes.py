@@ -286,18 +286,54 @@ async def fetch_emote(req: EmoteRequest):
     return {"url": url}
 
 
+RARE_PEPE_POOL = 8
+
+
+def _conversation_query(history: list[dict], max_turns: int = 4, max_chars: int = 600) -> str:
+    """
+    Build a search query from what the conversation has been about.
+
+    The button sends the literal string "rare pepe", which carries no subject,
+    so the collection was only ever sampled at random and its embeddings went
+    unused. The recent turns are the subject the user is actually on.
+    """
+    parts = []
+    for turn in reversed(history or []):
+        text = (turn.get("text") or "").strip()
+        # Skip the command echoes; they describe the button, not the topic.
+        if not text or text.lower().startswith(("rare pepe", "random ", "create a social")):
+            continue
+        parts.append(text)
+        if len(parts) >= max_turns:
+            break
+
+    return " ".join(reversed(parts))[:max_chars].strip()
+
+
 @router.post("/rare_pepe")
 async def fetch_rare_pepe(req: RarePepeRequest, request: Request):
     """Return a non-politically-sensitive rare pepe from the Qdrant collection."""
-    query = (req.query or "").strip().lower()
-    no_context = not query or query == "rare pepe"
+    query = (req.query or "").strip()
+    generic = not query or query.lower() == "rare pepe"
     target_language = await resolve_target_language(req.language, req.history, request, http)
 
-    if no_context:
-        pepe = get_random_pepe_meme()
-    else:
-        results = search_pepe_memes(req.query, limit=20)
+    # An explicit query wins; otherwise fall back to the conversation, and only
+    # to a random draw when there is nothing to search on at all.
+    search_query = query if not generic else _conversation_query(req.history)
+    matched_on = "query" if not generic else ("conversation" if search_query else "random")
+
+    pepe = None
+    if search_query:
+        results = search_pepe_memes(search_query, limit=RARE_PEPE_POOL)
+        # Sampling the closest few rather than taking the single best keeps
+        # repeated presses varied. The pool stays small on purpose: drawing
+        # from a wide one dilutes the match back towards random.
         pepe = random.choice(results) if results else None
+        if not pepe:
+            matched_on = "random"
+
+    if not pepe:
+        pepe = get_random_pepe_meme()
 
     if not pepe:
         raise HTTPException(status_code=404, detail="No rare pepe found")
@@ -322,6 +358,9 @@ async def fetch_rare_pepe(req: RarePepeRequest, request: Request):
         "filename": filename,
         "description": description,
         "explanation": explanation,
+        # Says whether this was picked to fit the conversation or drawn blind,
+        # so a mismatch can be told apart from a missed search.
+        "matched_on": matched_on,
         "language": target_language,
     }
 
