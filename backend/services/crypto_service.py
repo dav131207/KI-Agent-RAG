@@ -1,5 +1,6 @@
 """Crypto market data service for Professor Pepe."""
 
+import asyncio
 import os
 import time
 import logging
@@ -209,19 +210,44 @@ def format_hashrate(hashrate_ths: Optional[float]) -> str:
         return f"{hashrate_ths / 1000:.2f} PH/s"
     return f"{hashrate_ths:.2f} TH/s"
 
+_refresh_task: Optional[Any] = None
+
+
 async def get_pepe_market_data(http_client: httpx.AsyncClient) -> str:
     """
-    Fetch live PEP market data from CoinGecko with a 60-second cache.
-    Returns a formatted context string to be injected into the LLM prompt.
+    Return the cached market context, refreshing it in the background.
+
+    Fetching inline put four sequential external calls in front of every answer
+    whenever the cache had expired — measured at 1664ms of the 2525ms before the
+    first token. Prices and block heights move slowly enough that a slightly
+    stale figure is worth far more than a second and a half of silence, so a
+    stale value is served immediately and replaced when the refresh lands.
     """
+    global _refresh_task
     now = time.time()
-    
-    # Return cached data if valid (< 60s old)
+
     cache_time = _cache.get("time")
     cache_data = _cache.get("data")
-    if isinstance(cache_time, float) and isinstance(cache_data, str):
-        if now - cache_time < 60:
-            return cache_data
+    cached = cache_data if isinstance(cache_data, str) else None
+    fresh = isinstance(cache_time, float) and now - cache_time < 60
+
+    if cached is not None and fresh:
+        return cached
+
+    if cached is not None:
+        # Stale but usable: hand it over now, renew out of band.
+        if _refresh_task is None or _refresh_task.done():
+            _refresh_task = asyncio.create_task(_refresh_market_data(http_client))
+        return cached
+
+    # Nothing cached at all — the very first request after a restart. Warmed at
+    # startup, so this should not normally be reached on a user's request.
+    return await _refresh_market_data(http_client)
+
+
+async def _refresh_market_data(http_client: httpx.AsyncClient) -> str:
+    """Fetch every source and rebuild the cached context string."""
+    now = time.time()
 
     url = "https://api.coingecko.com/api/v3/simple/price"
     params = {
@@ -239,11 +265,22 @@ async def get_pepe_market_data(http_client: httpx.AsyncClient) -> str:
 
     context_str = ""
 
+    # Price and chain data come from unrelated hosts, so they are fetched
+    # together rather than one after the other. return_exceptions keeps one
+    # failing source from cancelling the other.
+    price_result, chain_result = await asyncio.gather(
+        http_client.get(url, params=params, headers=headers),
+        get_pepe_chain_data(http_client),
+        return_exceptions=True,
+    )
+
     # CoinGecko's free tier rate-limits aggressively on shared egress IPs. Its
     # failure must not take the explorer data down with it, so it gets its own
     # try block rather than wrapping the on-chain fetch below.
     try:
-        r = await http_client.get(url, params=params, headers=headers)
+        if isinstance(price_result, Exception):
+            raise price_result
+        r = price_result
         r.raise_for_status()
         data = r.json().get("pepecoin-network", {})
 
@@ -265,8 +302,7 @@ async def get_pepe_market_data(http_client: httpx.AsyncClient) -> str:
         logger.error(f"Failed to fetch coingecko data: {e}")
 
     try:
-        # Fetch on-chain data from Pepeblocks (structured, shared with charts).
-        chain = await get_pepe_chain_data(http_client)
+        chain = chain_result if isinstance(chain_result, dict) else {}
         if chain:
             context_str += "\nCURRENT ON-CHAIN DATA (from Pepeblocks Explorer):\n"
             if chain.get("block_height") is not None:

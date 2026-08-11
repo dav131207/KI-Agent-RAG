@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import logging
 import random
+import time
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
@@ -31,7 +33,8 @@ from api.schemas import (
     IngestTextRequest,
     RarePepeRequest,
 )
-from core.config import IMAGE_API_BASE, LLM_PROVIDER, MEMES_DIR
+from core.config import DEFAULT_MODEL, IMAGE_API_BASE, LLM_PROVIDER, MEMES_DIR
+from rag.qdrant_store import EMBEDDING_MODEL
 from core.http import http
 from core.providers import get_llm_provider
 from core.storage import storage_state
@@ -61,6 +64,8 @@ from services.rag_service import (
 )
 from rag import ingest_text
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -78,6 +83,10 @@ async def health():
     return {
         "status": "ok",
         "llm_provider": LLM_PROVIDER,
+        # render.yaml pins a different model than config.py defaults to, and
+        # the environment wins — so report what is actually being called.
+        "model": DEFAULT_MODEL,
+        "embedding_model": EMBEDDING_MODEL,
         "image_api": IMAGE_API_BASE,
         # Reports whether backend/data outlived the previous deploy. Compare
         # first_seen across redeploys: unchanged means the volume persists.
@@ -198,6 +207,16 @@ async def analytics_export(request: Request, days: int = 90, format: str = "json
 @router.post("/chat")
 async def chat(req: ChatRequest, request: Request):
     """Handle a chat message and stream or return the LLM response."""
+    # Every phase is timed. Optimising this path from local measurements was
+    # guesswork: what is slow depends on the distance to Gemini and Qdrant from
+    # wherever this runs, which only the deployment can answer.
+    timings: dict[str, int] = {}
+    started = time.perf_counter()
+
+    def mark(phase: str) -> None:
+        elapsed = int((time.perf_counter() - started) * 1000)
+        timings[phase] = elapsed - sum(timings.values())
+
     context = ""
     rag_chunk_count = 0
     chunk_ids: list[str] = []
@@ -210,6 +229,7 @@ async def chat(req: ChatRequest, request: Request):
         chunk_ids = [h["chunk_id"] for h in hits if h.get("chunk_id")]
         if hits:
             context = "\n\n---\n\n".join(h["text"] for h in hits)
+    mark("retrieval")
 
     track_event(
         client_ip=get_client_host(request),
@@ -224,9 +244,12 @@ async def chat(req: ChatRequest, request: Request):
         },
     )
 
+    mark("analytics")
+
     target_language = await resolve_target_language(
         None, req.history, request, http
     )
+    mark("language")
 
     response = await generate_chat_response(
         req.topic,
@@ -237,16 +260,34 @@ async def chat(req: ChatRequest, request: Request):
         stream=req.stream,
         base_url=str(request.base_url),
     )
+    mark("prepare")
 
     if req.stream:
+        async def timed(stream):
+            """Log how long the model took to produce its first chunk."""
+            first = True
+            async for chunk in stream:
+                if first:
+                    ttft = int((time.perf_counter() - started) * 1000)
+                    logger.info(
+                        "chat timing ms: %s, first_token_total=%s",
+                        ", ".join(f"{k}={v}" for k, v in timings.items()),
+                        ttft,
+                    )
+                    first = False
+                yield chunk
+
         return StreamingResponse(
-            response,
+            timed(response),
             media_type="text/plain",
             headers={
+                # Pre-generation phases; the model's own time is in the log,
+                # since headers are sent before the first chunk exists.
+                "X-Timing": ";".join(f"{k}={v}" for k, v in timings.items()),
                 "X-RAG-Chunks": str(rag_chunk_count),
                 # Echoed back so the client can attach them to a rating.
                 "X-RAG-Chunk-Ids": ",".join(chunk_ids),
-                "Access-Control-Expose-Headers": "X-RAG-Chunks, X-RAG-Chunk-Ids",
+                "Access-Control-Expose-Headers": "X-RAG-Chunks, X-RAG-Chunk-Ids, X-Timing",
             },
         )
     return {

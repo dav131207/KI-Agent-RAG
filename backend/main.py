@@ -5,6 +5,7 @@ This file only wires the application together. Business logic lives in
 services/, API routes in api/routes.py and shared utilities in core/.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,7 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from analytics import track_event
 from api.routes import router
 from core.config import COMMUNITY_ART_DIR, MEMES_DIR
-from core.http import close_http
+from core.http import close_http, http
+from services.crypto_service import get_pepe_market_data
 from core.security import is_rate_limited, rate_limit_response
 from core.storage import record_boot
 from services.language_service import get_client_host
@@ -30,8 +32,19 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Records whether the data directory survived the previous deploy.
     record_boot()
+    # Warm the market cache so the first visitor does not pay for the fetch.
+    # Detached: a slow or blocked explorer must not delay the server starting.
+    warm = asyncio.create_task(_warm_caches())
     yield
+    warm.cancel()
     await close_http()
+
+
+async def _warm_caches() -> None:
+    try:
+        await get_pepe_market_data(http)
+    except Exception as e:  # never let warming break startup
+        logger.warning("Cache warm-up failed: %s", e)
 
 
 app = FastAPI(title="Professor Pepe", version="1.0.0", lifespan=lifespan)
