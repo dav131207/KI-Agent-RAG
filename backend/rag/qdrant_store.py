@@ -108,8 +108,23 @@ def get_qdrant_client() -> Optional[QdrantClient]:
     return _qdrant_client
 
 
+# Collections already verified in this process. The check costs two round trips
+# — list the collections, then read one — and it ran on every message. Against a
+# cluster on another continent that was roughly 300ms per answer spent
+# confirming something that changes only when someone changes it.
+_verified_collections: set[str] = set()
+
+
+def forget_verified_collections() -> None:
+    """Force the next call to re-check, after a query failed unexpectedly."""
+    _verified_collections.clear()
+
+
 def ensure_collection() -> bool:
     """Create the collection if it does not exist, and fix the vector size if needed."""
+    if QDRANT_COLLECTION in _verified_collections:
+        return True
+
     client = get_qdrant_client()
     if not client:
         return False
@@ -122,6 +137,7 @@ def ensure_collection() -> bool:
                 collection_name=QDRANT_COLLECTION,
                 vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
             )
+            _verified_collections.add(QDRANT_COLLECTION)
             return True
 
         # If the collection exists with the wrong vector size, recreate it.
@@ -133,6 +149,7 @@ def ensure_collection() -> bool:
                 collection_name=QDRANT_COLLECTION,
                 vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
             )
+        _verified_collections.add(QDRANT_COLLECTION)
         return True
     except Exception:
         return False
@@ -272,6 +289,7 @@ def search_context_detailed(
             if p.payload
         ]
     except Exception:
+        forget_verified_collections()
         return []
 
 
@@ -375,3 +393,40 @@ def ingest_file(path: Path) -> int:
     """Read a plain text/markdown file and ingest it."""
     text = path.read_text(encoding="utf-8", errors="ignore")
     return ingest_text(text, source=str(path))
+
+
+def describe_collections() -> dict:
+    """
+    Report what the configured collections actually hold.
+
+    A wrong QDRANT_COLLECTION is invisible at runtime: retrieval simply finds
+    nothing, the agent answers without knowledge, and the embedding call is
+    still paid for on every message. Naming the collections and their sizes at
+    startup turns a silent misconfiguration into a line in the log.
+    """
+    client = get_qdrant_client()
+    if not client:
+        return {"error": "Qdrant not configured"}
+
+    try:
+        available = sorted(c.name for c in client.get_collections().collections)
+    except Exception as exc:
+        return {"error": f"Qdrant unreachable: {exc}"}
+
+    report: dict = {"available": available}
+    for label, name in (
+        ("knowledge", QDRANT_COLLECTION),
+        ("memes", PEPE_MEMES_COLLECTION),
+    ):
+        if name not in available:
+            report[label] = {"name": name, "exists": False, "points": 0}
+            continue
+        try:
+            report[label] = {
+                "name": name,
+                "exists": True,
+                "points": client.count(collection_name=name).count,
+            }
+        except Exception as exc:
+            report[label] = {"name": name, "exists": True, "error": str(exc)}
+    return report

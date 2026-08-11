@@ -21,6 +21,7 @@ from analytics import track_event
 from api.routes import router
 from core.config import COMMUNITY_ART_DIR, MEMES_DIR
 from core.http import close_http, http
+from rag.qdrant_store import describe_collections
 from services.crypto_service import get_pepe_market_data
 from core.security import is_rate_limited, rate_limit_response
 from core.storage import record_boot
@@ -55,6 +56,23 @@ async def _warm_caches() -> None:
         await get_pepe_market_data(http)
     except Exception as e:  # never let warming break startup
         logger.warning("Cache warm-up failed: %s", e)
+
+    try:
+        report = await asyncio.to_thread(describe_collections)
+        knowledge = report.get("knowledge") or {}
+        if not knowledge.get("points"):
+            logger.warning(
+                "Knowledge collection %r holds %s points. Retrieval will find "
+                "nothing while still costing an embedding call and a query per "
+                "message. Collections that do exist: %s",
+                knowledge.get("name"),
+                knowledge.get("points", 0),
+                report.get("available"),
+            )
+        else:
+            logger.info("Qdrant: %s", report)
+    except Exception as e:
+        logger.warning("Could not inspect Qdrant: %s", e)
 
 
 app = FastAPI(title="Professor Pepe", version="1.0.0", lifespan=lifespan)
