@@ -15,7 +15,17 @@ load_dotenv()
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+# Two models, because the work is not the same shape.
+#
+# Chat answers are latency-critical and land in front of a waiting person. The
+# larger Flash models take about 3.4s to their first token from this deployment
+# even with no system prompt at all — measured, so it is the model rather than
+# the prompt or the retrieval — while a lite model answers in about 0.6s.
+#
+# Social posts are generated behind a modal, are not read as they stream, and
+# carry detailed goal instructions where nuance is worth more than speed.
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
+POST_MODEL = os.getenv("GEMINI_POST_MODEL", "gemini-3.6-flash")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
 
 IMAGE_API_BASE = os.getenv("IMAGE_API_BASE", "https://onlypepes.com").rstrip("/")

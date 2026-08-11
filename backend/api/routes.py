@@ -34,7 +34,7 @@ from api.schemas import (
     IngestTextRequest,
     RarePepeRequest,
 )
-from core.config import DEFAULT_MODEL, IMAGE_API_BASE, LLM_PROVIDER, MEMES_DIR
+from core.config import DEFAULT_MODEL, IMAGE_API_BASE, LLM_PROVIDER, MEMES_DIR, POST_MODEL
 from rag.qdrant_store import EMBEDDING_MODEL
 from core.http import http
 from core.providers import get_llm_provider
@@ -90,6 +90,7 @@ async def health():
         # render.yaml pins a different model than config.py defaults to, and
         # the environment wins — so report what is actually being called.
         "model": DEFAULT_MODEL,
+        "post_model": POST_MODEL,
         "embedding_model": EMBEDDING_MODEL,
         "image_api": IMAGE_API_BASE,
         # Reports whether backend/data outlived the previous deploy. Compare

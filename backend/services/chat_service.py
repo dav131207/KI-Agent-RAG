@@ -6,7 +6,7 @@ import re
 from typing import AsyncGenerator, Optional
 
 from analytics import track_event
-from core.config import DEFAULT_MODEL, SYSTEM_PROMPT_PATH
+from core.config import DEFAULT_MODEL, POST_MODEL, SYSTEM_PROMPT_PATH
 from core.providers import get_llm_provider
 from core.providers.base import LLMError
 from fastapi import HTTPException
@@ -318,7 +318,7 @@ async def compress_to_limit(text: str, limit: int = TWEET_LIMIT) -> str:
             return text
         result = await asyncio.to_thread(
             provider.generate,
-            DEFAULT_MODEL,
+            POST_MODEL,
             [
                 {
                     "role": "user",
@@ -492,7 +492,7 @@ async def generate_chat_response(
                     platform, strategy, post_format = parse_social_params(message)
 
                     full = ""
-                    async for chunk in provider.stream(DEFAULT_MODEL, contents, temperature=0.9):
+                    async for chunk in provider.stream(POST_MODEL, contents, temperature=0.9):
                         full += chunk
                     
                     final_text = await format_social_post(full, platform, strategy, post_format)
@@ -531,7 +531,7 @@ async def generate_chat_response(
 
     try:
         kwargs = {"temperature": 0.9} if is_social else {}
-        text = provider.generate(DEFAULT_MODEL, contents, **kwargs)
+        text = provider.generate(POST_MODEL if is_social else DEFAULT_MODEL, contents, **kwargs)
     except LLMError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
 
