@@ -20,6 +20,7 @@ from api.routes import router
 from core.config import COMMUNITY_ART_DIR, MEMES_DIR
 from core.http import close_http
 from core.security import is_rate_limited, rate_limit_response
+from core.storage import record_boot
 from services.language_service import get_client_host
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Records whether the data directory survived the previous deploy.
+    record_boot()
     yield
     await close_http()
 

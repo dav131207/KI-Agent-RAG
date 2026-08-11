@@ -32,6 +32,7 @@ from api.schemas import (
 from core.config import IMAGE_API_BASE, LLM_PROVIDER, MEMES_DIR
 from core.http import http
 from core.providers import get_llm_provider
+from core.storage import storage_state
 from services.chain_image_service import render_chain_stats_card
 from services.chat_service import GET_COINS_TEXTS, generate_chat_response, is_social_command
 from services.crypto_service import get_pepe_chain_data
@@ -76,6 +77,9 @@ async def health():
         "status": "ok",
         "llm_provider": LLM_PROVIDER,
         "image_api": IMAGE_API_BASE,
+        # Reports whether backend/data outlived the previous deploy. Compare
+        # first_seen across redeploys: unchanged means the volume persists.
+        "storage": storage_state(),
     }
 
 

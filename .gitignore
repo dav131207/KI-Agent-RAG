@@ -48,3 +48,6 @@ Thumbs.db
 # Local rare pepe image collection
 backend/memes/*
 !backend/memes/.gitkeep
+
+# Runtime marker for the data-directory persistence check
+backend/data/storage_marker.json
