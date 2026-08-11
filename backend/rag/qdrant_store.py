@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover
     types = None
 
 from rag.chunking import semantic_chunk_text
-from rag.retrieval import _keyword_search, merge_hybrid_results
+from rag.retrieval import merge_hybrid_results, score_points_by_keyword
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001")
@@ -254,9 +254,10 @@ def search_context_detailed(
         vector_points = [r for r in vector_response.points if r.payload]
 
         if use_hybrid:
-            keyword_results = _keyword_search(
-                client, QDRANT_COLLECTION, query, limit=limit * 4
-            )
+            # Rerank the candidates the vector pass already fetched rather than
+            # scanning the collection: the extra round trips cost more than the
+            # recall they bought.
+            keyword_results = score_points_by_keyword(query, vector_points)
             hits = merge_hybrid_results(vector_points, keyword_results, final_limit=limit)
         else:
             hits = vector_points[:limit]

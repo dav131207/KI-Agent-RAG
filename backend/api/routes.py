@@ -1,5 +1,6 @@
 """API routes for Professor Pepe."""
 
+import asyncio
 import json
 import random
 from io import BytesIO
@@ -201,7 +202,10 @@ async def chat(req: ChatRequest, request: Request):
     rag_chunk_count = 0
     chunk_ids: list[str] = []
     if req.use_rag:
-        hits = search_context_detailed(req.message, limit=3)
+        # Retrieval embeds the query and queries Qdrant, both blocking calls.
+        # Run on a worker thread so they do not hold the loop while every other
+        # request waits.
+        hits = await asyncio.to_thread(search_context_detailed, req.message, 3)
         rag_chunk_count = len(hits)
         chunk_ids = [h["chunk_id"] for h in hits if h.get("chunk_id")]
         if hits:

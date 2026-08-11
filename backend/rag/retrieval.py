@@ -42,6 +42,31 @@ def _keyword_score(query: str, text: str) -> float:
     return score
 
 
+def score_points_by_keyword(query: str, points: List) -> List[tuple[Any, float, Any]]:
+    """
+    Rank already-retrieved points by keyword score, best first.
+
+    The keyword half of the hybrid used to read the whole collection on every
+    message — 551ms locally at 10k chunks, and one network round trip per page
+    against a hosted Qdrant. Scoring the vector candidates instead costs
+    nothing extra: they are already in memory. The trade is that a document
+    only the keywords would have found, and the vector pass missed entirely,
+    no longer surfaces.
+    """
+    if not query.strip():
+        return []
+
+    scored = []
+    for point in points:
+        text = point.payload.get("text", "") if point.payload else ""
+        score = _keyword_score(query, text)
+        if score > 0:
+            scored.append((point.id, score, point))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return scored
+
+
 def _keyword_search(
     client: QdrantClient,
     collection_name: str,
