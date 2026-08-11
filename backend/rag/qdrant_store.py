@@ -7,6 +7,7 @@ Supports both Qdrant Cloud and local Qdrant instances.
 """
 
 import hashlib
+import logging
 import os
 import random
 import time
@@ -43,6 +44,8 @@ QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "professor_pepe")
 PEPE_MEMES_COLLECTION = "pepe_memes"
 
 VECTOR_SIZE = 3072  # dimension of models/gemini-embedding-001
+
+logger = logging.getLogger(__name__)
 
 _embedding_client: Optional[genai.Client] = None  # type: ignore[valid-type]
 _qdrant_client: Optional[QdrantClient] = None
@@ -231,7 +234,25 @@ def ingest_text(text: str, source: str = "manual", chunk_size: int = 500, chunk_
     ]
 
     client.upsert(collection_name=QDRANT_COLLECTION, points=points)
+    # The collection has content again, so retrieval must stop skipping.
+    set_knowledge_empty(False)
     return len(points)
+
+
+# Set once the knowledge collection is known to be empty, so retrieval can be
+# skipped entirely. An empty collection still costs an embedding call and a
+# query — measured at ~1s per message against a cluster on another continent —
+# and returns nothing either way.
+_knowledge_is_empty = False
+_empty_notice_logged = False
+
+
+def set_knowledge_empty(is_empty: bool) -> None:
+    """Record whether the knowledge collection has anything in it."""
+    global _knowledge_is_empty, _empty_notice_logged
+    _knowledge_is_empty = is_empty
+    if not is_empty:
+        _empty_notice_logged = False
 
 
 def search_context(query: str, limit: int = 3, use_hybrid: bool = True) -> List[str]:
@@ -252,6 +273,18 @@ def search_context_detailed(
     When use_hybrid is True, dense vector search is combined with a simple
     keyword search over payloads and the results are fused with RRF.
     """
+    global _empty_notice_logged
+    if _knowledge_is_empty:
+        # Nothing to find. Skipping saves the embedding call and the query,
+        # which is the whole cost of retrieval when the collection is empty.
+        if not _empty_notice_logged:
+            logger.warning(
+                "Skipping retrieval: knowledge collection %r is empty.",
+                QDRANT_COLLECTION,
+            )
+            _empty_notice_logged = True
+        return []
+
     client = get_qdrant_client()
     if not client or not ensure_collection():
         return []

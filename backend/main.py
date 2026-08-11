@@ -21,7 +21,7 @@ from analytics import track_event
 from api.routes import router
 from core.config import COMMUNITY_ART_DIR, MEMES_DIR
 from core.http import close_http, http
-from rag.qdrant_store import describe_collections
+from rag.qdrant_store import describe_collections, set_knowledge_empty
 from services.crypto_service import get_pepe_market_data
 from core.security import is_rate_limited, rate_limit_response
 from core.storage import record_boot
@@ -60,6 +60,7 @@ async def _warm_caches() -> None:
     try:
         report = await asyncio.to_thread(describe_collections)
         knowledge = report.get("knowledge") or {}
+        set_knowledge_empty(not knowledge.get("points"))
         if not knowledge.get("points"):
             logger.warning(
                 "Knowledge collection %r holds %s points. Retrieval will find "
