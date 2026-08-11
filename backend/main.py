@@ -7,6 +7,7 @@ services/, API routes in api/routes.py and shared utilities in core/.
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -24,6 +25,15 @@ from services.crypto_service import get_pepe_market_data
 from core.security import is_rate_limited, rate_limit_response
 from core.storage import record_boot
 from services.language_service import get_client_host
+
+# Nothing configured logging, so the root logger stayed at WARNING and every
+# logger.info in the app was discarded — including the request timings, which
+# is why they never reached the deployment's logs. uvicorn configures only its
+# own loggers, not the application's.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(levelname)s: %(name)s: %(message)s",
+)
 
 logger = logging.getLogger(__name__)
 
