@@ -166,11 +166,21 @@ export default function Chat({ isDark }) {
     if (sendText.toLowerCase() === 'rare pepe') {
       try {
         const pepe = await fetchRarePepe()
+        // The endpoint returns a description and an explanation, already
+        // translated, and both were being discarded — leaving rare pepes as
+        // the only command that answers with a bare image. An empty text also
+        // hid the feedback buttons, which render only when there is text.
+        const caption = [pepe.description, pepe.explanation]
+          .map((part) => (part || '').trim())
+          .filter(Boolean)
+          .filter((part, index, parts) => parts.indexOf(part) === index)
+          .join('\n\n')
+
         setMessages((prev) => [
           ...prev,
           {
             role: 'assistant',
-            text: '',
+            text: caption,
             image: pepe.url,
             time: formatTime(new Date()),
           },
