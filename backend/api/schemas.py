@@ -15,6 +15,10 @@ class ChatRequest(BaseModel):
 
 class ImageRequest(BaseModel):
     topic: Optional[str] = Field(default=None, description="Search term for the image")
+    context: Optional[str] = Field(
+        default=None,
+        description="Finished post text; ranks the candidates the topic found",
+    )
 
 
 class EmoteRequest(BaseModel):

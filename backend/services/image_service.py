@@ -56,6 +56,14 @@ def extract_image_search_term(topic: Optional[str]) -> str:
 
     topic = (topic or "").strip()
 
+    # A social-post command carries its subject in "Topic:", after several
+    # other fields. Stripping only the leading verb left the whole parameter
+    # list as the query — "Platform: Twitter. Language: English. Goal: ..." —
+    # which matches nothing in the image index.
+    structured = re.search(r"\bTopic:\s*(.+)$", topic, re.IGNORECASE | re.DOTALL)
+    if structured:
+        return structured.group(1).strip().rstrip(".").strip()
+
     topic = re.sub(
         r"^create\s+(a\s+)?social\s+media\s+post(\s+about\s+)?",
         "",
@@ -80,34 +88,82 @@ def extract_image_search_term(topic: Optional[str]) -> str:
     return topic
 
 
+
+def _relevance(query: str, item: dict) -> int:
+    """Score a candidate by whole-word overlap with the query.
+
+    Whole words on purpose: the index's substring matching is what returns
+    "mine's" for "mining", and that is exactly what needs demoting.
+    """
+    import re
+
+    words = {w for w in re.findall(r"[a-z]{3,}", (query or "").lower())}
+    if not words:
+        return 0
+
+    haystack = " ".join(
+        [
+            str(item.get("description") or ""),
+            " ".join(item.get("tags") or []),
+        ]
+    ).lower()
+    present = set(re.findall(r"[a-z]{3,}", haystack))
+    return len(words & present)
+
+
 async def fetch_onlypepes_image(
-    http_client: httpx.AsyncClient, topic: Optional[str]
+    http_client: httpx.AsyncClient, topic: Optional[str], context: Optional[str] = None
 ) -> dict:
-    """Fetch a Pepe image from the OnlyPepes API."""
+    """
+    Fetch a Pepe image from the OnlyPepes API.
+
+    `topic` is the search query — narrow, so the index returns candidates at
+    all. `context` is what they are ranked against, and should be the finished
+    post: a one-word topic scores every candidate identically, while the post
+    text has enough words to tell them apart.
+    """
     topic = extract_image_search_term(topic)
     is_pure_random = not topic or topic.lower() in {"random meme", "random pepe", "random"}
 
-    params: dict = {"limit": 1}
-    if not is_pure_random:
-        params["search"] = topic
-    params["random"] = "true"
-
-    try:
-        r = await http_client.get(f"{IMAGE_API_BASE}/api/pepe", params=params)
-        r.raise_for_status()
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Image API error: {e}")
-
-    payload = r.json()
-    data = payload.get("data")
-    if isinstance(data, dict):
-        pepe = data
-    elif isinstance(data, list) and data:
-        pepe = data[0]
+    # random=true is applied on top of the search rather than instead of it,
+    # and it shuffles the matches far enough that the relevant ones drop out —
+    # measured: 1 of 5 results mentioned the search term without it, 0 of 5
+    # with it. Randomise only when there is nothing to match against.
+    params: dict = {"limit": 1 if is_pure_random else 10}
+    if is_pure_random:
+        params["random"] = "true"
     else:
+        params["search"] = topic
+
+    async def _query(query_params: dict) -> list:
+        try:
+            r = await http_client.get(f"{IMAGE_API_BASE}/api/pepe", params=query_params)
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=502, detail=f"Image API error: {e}")
+
+        data = r.json().get("data")
+        if isinstance(data, dict):
+            return [data]
+        return data if isinstance(data, list) else []
+
+    candidates = await _query(params)
+
+    # The index matches substrings, so a search for "mining" happily returns a
+    # picture captioned "well mine's better". Asking for several and ranking
+    # them here on whole-word overlap puts an actually relevant one first.
+    if candidates and not is_pure_random:
+        candidates.sort(key=lambda item: _relevance(context or topic, item), reverse=True)
+
+    # A precise topic can legitimately match nothing. Falling back to a random
+    # image keeps a post illustrated instead of failing the whole request.
+    if not candidates and not is_pure_random:
+        candidates = await _query({"limit": 1, "random": "true"})
+
+    if not candidates:
         raise HTTPException(status_code=404, detail="No image found")
 
-    return pepe
+    return candidates[0]
 
 
 def build_watermarked_url(base_url: str, external_url: Optional[str], filename: Optional[str]) -> Optional[str]:

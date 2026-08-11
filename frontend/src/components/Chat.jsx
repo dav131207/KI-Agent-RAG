@@ -227,6 +227,9 @@ export default function Chat({ isDark }) {
         isSocialCommand && /Goal:\s*Data\b/i.test(sendText)
 
       let imageUrl = null
+      // A social post's image is fetched after generation instead, so the
+      // finished text can rank the candidates. Only the chain card and plain
+      // image requests can be resolved up front.
       if (wantsChainCard) {
         // The card 503s when the explorer is down; probe the JSON endpoint
         // first (same 60s cache, no image rendering) so a dead explorer leaves
@@ -237,7 +240,7 @@ export default function Chat({ isDark }) {
         imageUrl = chainOk
           ? `${API_BASE}/api/chain-stats.png?metric=${pickChainMetric(sendText)}&t=${Date.now()}`
           : null
-      } else if (wantsImage || isSocialCommand) {
+      } else if (wantsImage && !isSocialCommand) {
         imageUrl = await fetchImage(sendText)
       }
 
@@ -278,6 +281,10 @@ export default function Chat({ isDark }) {
         setTypingText(fullText)
       }
 
+      if (isSocialCommand && !wantsChainCard) {
+        imageUrl = await fetchImage(sendText, fullText)
+      }
+
       let emoteUrl = null
       if (fullText && Math.random() < 0.35) {
         emoteUrl = await fetchEmote(fullText)
@@ -312,12 +319,12 @@ export default function Chat({ isDark }) {
     }
   }
 
-  const fetchImage = async (search) => {
+  const fetchImage = async (search, context) => {
     try {
       const res = await fetch(`${API_BASE}/api/image`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: search }),
+        body: JSON.stringify({ topic: search, context }),
       })
       if (!res.ok) return null
       const data = await res.json()

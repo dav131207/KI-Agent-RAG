@@ -255,7 +255,7 @@ async def chat(req: ChatRequest, request: Request):
 @router.post("/image")
 async def fetch_image(req: ImageRequest, request: Request):
     """Fetch an image from the OnlyPepes API using keywords/tags."""
-    pepe = await fetch_onlypepes_image(http, req.topic)
+    pepe = await fetch_onlypepes_image(http, req.topic, req.context)
     external_url = pepe.get("url")
     watermarked_url = build_watermarked_url(str(request.base_url), external_url, None)
     return {
