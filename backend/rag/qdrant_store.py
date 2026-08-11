@@ -8,6 +8,7 @@ Supports both Qdrant Cloud and local Qdrant instances.
 
 import hashlib
 import logging
+from collections import OrderedDict
 import os
 import random
 import time
@@ -59,8 +60,22 @@ def _get_embedding_client() -> Optional[genai.Client]:  # type: ignore[valid-typ
     return _embedding_client
 
 
+# Query embeddings, keyed by text. The call is the slow half of retrieval and
+# its duration varies by a factor of six between requests, so a repeat question
+# — or a reload of the same conversation — should not pay for it twice.
+_embed_cache: "OrderedDict[str, List[List[float]]]" = OrderedDict()
+EMBED_CACHE_MAX = 512
+
+
 def _embed(texts: List[str]) -> Optional[List[List[float]]]:
     """Embed a list of texts using the Gemini embedding API."""
+    cache_key = "\x00".join(texts) if len(texts) == 1 else None
+    if cache_key is not None:
+        cached = _embed_cache.get(cache_key)
+        if cached is not None:
+            _embed_cache.move_to_end(cache_key)
+            return cached
+
     client = _get_embedding_client()
     if not client:
         return None
@@ -74,7 +89,12 @@ def _embed(texts: List[str]) -> Optional[List[List[float]]]:
             contents=texts,
             config=config,
         )
-        return [embedding.values for embedding in response.embeddings]
+        vectors = [embedding.values for embedding in response.embeddings]
+        if cache_key is not None:
+            _embed_cache[cache_key] = vectors
+            if len(_embed_cache) > EMBED_CACHE_MAX:
+                _embed_cache.popitem(last=False)
+        return vectors
     except Exception:
         return None
 

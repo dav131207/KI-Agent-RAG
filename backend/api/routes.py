@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import random
 import time
 from io import BytesIO
@@ -65,6 +66,9 @@ from services.rag_service import (
 from rag import ingest_text
 
 logger = logging.getLogger(__name__)
+
+# How long an answer may wait for retrieved context before going without it.
+RETRIEVAL_BUDGET_SECONDS = float(os.getenv("RETRIEVAL_BUDGET_SECONDS", "1.5"))
 
 router = APIRouter()
 
@@ -224,7 +228,21 @@ async def chat(req: ChatRequest, request: Request):
         # Retrieval embeds the query and queries Qdrant, both blocking calls.
         # Run on a worker thread so they do not hold the loop while every other
         # request waits.
-        hits = await asyncio.to_thread(search_context_detailed, req.message, 3)
+        # The embedding call is the slow, unpredictable half of retrieval:
+        # measured at 450ms on one request and roughly 2.9s on another, for the
+        # same work. Past the budget the answer goes ahead without retrieved
+        # context — a slightly less informed reply beats a visibly stuck one.
+        try:
+            hits = await asyncio.wait_for(
+                asyncio.to_thread(search_context_detailed, req.message, 3),
+                timeout=RETRIEVAL_BUDGET_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            hits = []
+            logger.warning(
+                "Retrieval exceeded %.1fs; answering without context.",
+                RETRIEVAL_BUDGET_SECONDS,
+            )
         rag_chunk_count = len(hits)
         chunk_ids = [h["chunk_id"] for h in hits if h.get("chunk_id")]
         if hits:
