@@ -293,6 +293,7 @@ export default function Chat({ isDark }) {
           time: formatTime(new Date()),
           ragChunks,
           ragChunkIds,
+          isSocialPost: isSocialCommand,
         },
       ])
       setTypingText('')
@@ -379,7 +380,7 @@ export default function Chat({ isDark }) {
               <div key={idx} onClick={(e) => {
                 if (e.target.tagName === 'IMG') setModalImage(e.target.src)
               }}>
-                <Message msg={msg} isDark={isDark} userMessage={precedingUserMessage} ragChunks={msg.ragChunks} ragChunkIds={msg.ragChunkIds} />
+                <Message msg={msg} isDark={isDark} userMessage={precedingUserMessage} ragChunks={msg.ragChunks} ragChunkIds={msg.ragChunkIds} isSocialPost={msg.isSocialPost} />
               </div>
             )
           })}

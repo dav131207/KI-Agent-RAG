@@ -23,6 +23,8 @@ RATE_LIMITS = {
     "/api/image": (30, 60),
     "/api/get_coins": (20, 60),
     "/api/emote": (60, 60),
+    "/api/emotes/suggest": (60, 60),
+    "/api/emotes/export": (60, 60),
     "/api/event": (120, 60),
     "/api/analytics": (60, 60),
     "/api/analytics/learning": (60, 60),

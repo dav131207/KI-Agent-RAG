@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { ThumbsDown, ThumbsUp } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import EmotePicker from './EmotePicker'
 import remarkGfm from 'remark-gfm'
 import { trackEvent } from '../lib/analytics'
 
@@ -53,7 +54,7 @@ const FEEDBACK_REASONS = [
 // the row size sane.
 const FEEDBACK_TEXT_LIMIT = 4000
 
-export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkIds }) {
+export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkIds, isSocialPost }) {
   const isUser = msg.role === 'user'
   const [feedback, setFeedback] = useState(null)
   const [askReason, setAskReason] = useState(false)
@@ -130,6 +131,7 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {msg.emote ? `${textWithLinks.trim()} ![emote](${msg.emote})` : textWithLinks}
               </ReactMarkdown>
+              {isSocialPost && <EmotePicker text={msg.text} />}
             </div>
           )}
         </div>

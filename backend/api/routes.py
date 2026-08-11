@@ -4,6 +4,7 @@ import json
 import random
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import quote
 from typing import Optional
 
 import httpx
@@ -36,7 +37,7 @@ from core.storage import storage_state
 from services.chain_image_service import render_chain_stats_card
 from services.chat_service import GET_COINS_TEXTS, generate_chat_response, is_social_command
 from services.crypto_service import get_pepe_chain_data
-from services.emote_service import emote_files, pick_emote
+from services.emote_service import emote_files, export_emote, pick_emote, suggest_emotes
 from services.image_service import (
     ALLOWED_IMAGE_PREFIXES,
     apply_watermark,
@@ -323,6 +324,46 @@ async def fetch_rare_pepe(req: RarePepeRequest, request: Request):
         "explanation": explanation,
         "language": target_language,
     }
+
+
+@router.get("/emotes/suggest")
+async def suggest_emotes_endpoint(text: str = "", limit: int = 4, animated: bool = True):
+    """
+    Shortlist emotes matching a piece of text, for attaching to a social post.
+
+    Returns candidates rather than one pick: an emote that misses the mood is
+    worse under a post than none at all, so the choice stays with the author.
+    """
+    names = suggest_emotes(text, limit=max(1, min(limit, 12)), animated_only=animated)
+    if not names:
+        raise HTTPException(status_code=404, detail="No emotes available")
+    return {
+        "emotes": [
+            {
+                "name": name,
+                # Small original for the picker, upscaled copy for downloading.
+                "preview_url": f"/emotes/{quote(name)}",
+                "download_url": f"/api/emotes/export?name={quote(name)}",
+            }
+            for name in names
+        ]
+    }
+
+
+@router.get("/emotes/export")
+async def export_emote_endpoint(name: str):
+    """Serve an emote scaled up for social media, animation intact."""
+    data, media_type = export_emote(name)
+    extension = "gif" if media_type == "image/gif" else "png"
+    stem = Path(name).stem
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{stem}.{extension}"',
+            "Cache-Control": "public, max-age=86400",
+        },
+    )
 
 
 @router.get("/chain-stats")
