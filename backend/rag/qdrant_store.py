@@ -352,6 +352,11 @@ def search_pepe_memes(query: str, limit: int = 10) -> List[dict]:
     if not client:
         return []
 
+    if _meme_vectors_degenerate:
+        # Every point shares one vector, so the query cannot rank them. Skip
+        # the embedding call and let the caller fall back to a random draw.
+        return []
+
     try:
         embeddings = _embed([query])
         if embeddings is None:
@@ -446,6 +451,43 @@ def ingest_file(path: Path) -> int:
     """Read a plain text/markdown file and ingest it."""
     text = path.read_text(encoding="utf-8", errors="ignore")
     return ingest_text(text, source=str(path))
+
+
+_meme_vectors_degenerate = False
+
+
+def set_meme_vectors_degenerate(is_degenerate: bool) -> None:
+    """Record whether pepe_memes has any vector variety worth searching."""
+    global _meme_vectors_degenerate
+    _meme_vectors_degenerate = is_degenerate
+
+
+def sample_meme_vector_variety(sample: int = 20) -> Optional[bool]:
+    """
+    Report whether the meme vectors are all the same.
+
+    An ingest script that reuses one embedding for every image leaves a
+    collection where each point sits at an identical distance from any query.
+    Searching it cannot rank anything, but still costs an embedding call — the
+    slowest part of the request.
+    """
+    client = get_qdrant_client()
+    if not client:
+        return None
+    try:
+        points, _ = client.scroll(
+            collection_name=PEPE_MEMES_COLLECTION,
+            limit=sample,
+            with_payload=False,
+            with_vectors=True,
+        )
+    except Exception:
+        return None
+
+    vectors = {tuple(p.vector) for p in points if p.vector}
+    if len(vectors) < 2:
+        return len(points) > 1
+    return False
 
 
 def describe_collections() -> dict:

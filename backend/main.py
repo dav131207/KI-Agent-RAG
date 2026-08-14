@@ -21,7 +21,12 @@ from analytics import track_event
 from api.routes import router
 from core.config import COMMUNITY_ART_DIR, MEMES_DIR
 from core.http import close_http, http
-from rag.qdrant_store import describe_collections, set_knowledge_empty
+from rag.qdrant_store import (
+    describe_collections,
+    sample_meme_vector_variety,
+    set_knowledge_empty,
+    set_meme_vectors_degenerate,
+)
 from services.crypto_service import get_pepe_market_data
 from core.security import is_rate_limited, rate_limit_response
 from core.storage import record_boot
@@ -72,6 +77,15 @@ async def _warm_caches() -> None:
             )
         else:
             logger.info("Qdrant: %s", report)
+
+        degenerate = await asyncio.to_thread(sample_meme_vector_variety)
+        if degenerate:
+            set_meme_vectors_degenerate(True)
+            logger.warning(
+                "pepe_memes vectors are all identical — semantic search over it "
+                "cannot rank anything, so it is skipped and memes are drawn at "
+                "random. Re-ingest with per-image embeddings to enable search."
+            )
     except Exception as e:
         logger.warning("Could not inspect Qdrant: %s", e)
 
