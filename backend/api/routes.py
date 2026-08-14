@@ -70,6 +70,9 @@ logger = logging.getLogger(__name__)
 # How long an answer may wait for retrieved context before going without it.
 RETRIEVAL_BUDGET_SECONDS = float(os.getenv("RETRIEVAL_BUDGET_SECONDS", "1.5"))
 
+# Community art is user-submitted, so the size is somebody else's decision.
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "25")) * 1024 * 1024
+
 router = APIRouter()
 
 
@@ -536,8 +539,15 @@ async def watermark_proxy(url: Optional[str] = None, path: Optional[str] = None)
 
 
 @router.post("/ingest/text")
-async def ingest_text_endpoint(req: IngestTextRequest):
-    """Ingest plain text into the Qdrant knowledge base."""
+async def ingest_text_endpoint(req: IngestTextRequest, request: Request):
+    """
+    Ingest plain text into the Qdrant knowledge base. Admin only.
+
+    Whatever lands here is retrieved as context and presented to users as fact.
+    On a public app that made the knowledge base writable by anyone — including
+    with wallet addresses the agent would then repeat.
+    """
+    check_admin_auth(request.headers.get("Authorization"))
     count = ingest_text(req.text)
     if count == 0:
         raise HTTPException(status_code=503, detail="Qdrant not configured")
@@ -545,8 +555,9 @@ async def ingest_text_endpoint(req: IngestTextRequest):
 
 
 @router.post("/ingest/file")
-async def ingest_file_endpoint(file: UploadFile = File(...)):
-    """Upload and ingest a text/markdown file into Qdrant."""
+async def ingest_file_endpoint(request: Request, file: UploadFile = File(...)):
+    """Upload and ingest a text/markdown file into Qdrant. Admin only."""
+    check_admin_auth(request.headers.get("Authorization"))
     allowed = {".txt", ".md", ".markdown"}
     ext = Path(file.filename or "").suffix.lower()
     if ext not in allowed:
@@ -575,10 +586,25 @@ async def upload_community_art(label: str = Form(...), file: UploadFile = File(.
     
     new_filename = f"{uuid.uuid4().hex}{ext}"
     file_path = UPLOADS_DIR / new_filename
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
+
+    # Copied without a bound before, so one request could fill the volume — and
+    # every upload costs a Gemini vision call. Written in chunks against a cap,
+    # discarding the partial file if the cap is passed.
+    written = 0
+    try:
+        with open(file_path, "wb") as buffer:
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+                    )
+                buffer.write(chunk)
+    except Exception:
+        file_path.unlink(missing_ok=True)
+        raise
+
     art = add_art(new_filename, label, file_path, file.content_type or "image/png")
     return {"status": "success", "art": art}
 

@@ -32,6 +32,7 @@ RATE_LIMITS = {
     "/api/watermark": (100, 60),
     "/api/chain-stats": (60, 60),
     "/api/chain-stats.png": (100, 60),
+    "/api/community-art/upload": (5, 60),
     "/api/ingest/text": (10, 60),
     "/api/ingest/file": (10, 60),
 }
