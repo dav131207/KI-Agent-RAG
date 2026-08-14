@@ -80,9 +80,12 @@ TWEET_LIMIT = 280
 # menu now asks what the post should achieve, in plain words.
 GOAL_INSTRUCTIONS = {
     "community": (
-        "GOAL — POST TO THE COMMUNITY: Speak to people already in the Pepecoin community. "
-        "Always include @PepecoinNetwork, @dogecoin, @litecoin and @Bitcoin. Use relevant "
-        "cashtags like $PEP. CRITICAL: Use ONLY 0 to 1 emojis maximum in the entire post. "
+        "GOAL — POST TO THE COMMUNITY: Speak to people already here. This is maintenance, not "
+        "growth: handles and cashtags address the existing audience and do not travel beyond it, "
+        "so do not stretch for reach — say something the people already following you are glad "
+        "to read.\n"
+        "Include @PepecoinNetwork, @dogecoin, @litecoin and @Bitcoin. Use relevant cashtags like "
+        "$PEP. CRITICAL: Use ONLY 0 to 1 emojis maximum in the entire post. "
         "CRITICAL: Be extremely creative. Use high variance in sentence structure, vocabulary, "
         "and angles."
     ),
@@ -201,11 +204,22 @@ def build_contents(
         system += "\n\nYou are generating a social media post. "
 
         if platform == "twitter":
+            # Weights from X's published ranking code: a reply and a quote are
+            # each worth 5.0 against 0.5 for a like, a share 2.0, a repost 1.0.
+            # Opening a link is +0.2 — links are not penalised, which the
+            # instruction that used to sit here assumed they were. A report is
+            # -234.0, which no amount of engagement offsets.
             system += (
-                "Format the post for Twitter. "
-                "Do NOT include any external links (URLs) in the post text, as the X algorithm "
-                "suppresses reach for external links. If a link is needed, write "
-                "'(Link in the replies)' instead. "
+                "Format the post for Twitter. Include a link only when it genuinely helps the "
+                "reader; a link that gets opened counts in your favour, but a post that exists "
+                "to carry one does not. "
+                "WHAT ACTUALLY TRAVELS: a reply or a quote is worth roughly ten times a like, and "
+                "a share four times. Write something a reader would answer, or forward with their "
+                "own comment attached — a claim worth agreeing or disagreeing with in public. A "
+                "post that only earns likes has earned almost nothing. "
+                "WHAT DESTROYS IT: being reported outweighs any engagement many times over. Never "
+                "write anything that reads as a financial pitch, a guaranteed return, or pressure "
+                "to buy. "
             )
         elif platform == "reddit":
             system += (
