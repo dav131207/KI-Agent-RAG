@@ -14,7 +14,6 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
-from PIL import Image
 
 from analytics import (
     get_chunk_quality,
@@ -45,7 +44,7 @@ from services.crypto_service import get_pepe_chain_data
 from services.emote_service import emote_files, export_emote, pick_emote, suggest_emotes
 from services.image_service import (
     ALLOWED_IMAGE_PREFIXES,
-    apply_watermark,
+    watermark_image_bytes,
     build_watermarked_url,
     extract_image_search_term,
     fetch_onlypepes_image,
@@ -542,12 +541,10 @@ async def watermark_proxy(url: Optional[str] = None, path: Optional[str] = None)
         data = file_path.read_bytes()
 
     try:
-        base = Image.open(BytesIO(data))
-        result = apply_watermark(base)
-        buf = BytesIO()
-        result.save(buf, format="PNG")
-        buf.seek(0)
-        return StreamingResponse(buf, media_type="image/png")
+        # Per-frame watermarking of an animation is CPU-bound; on the event
+        # loop it would stall every other request for its duration.
+        result, media_type = await asyncio.to_thread(watermark_image_bytes, data)
+        return StreamingResponse(BytesIO(result), media_type=media_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Watermark error: {e}")
 

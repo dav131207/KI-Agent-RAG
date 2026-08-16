@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import threading
 import time
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional
 
@@ -100,16 +101,40 @@ def init_db() -> None:
 init_db()
 _migrate_legacy_community_files()
 
+def _describable_bytes(file_path: Path, mime_type: str) -> tuple[bytes, str]:
+    """
+    Return image data in a form the vision model accepts.
+
+    Gemini takes PNG, JPEG and WEBP for images but not GIF, so an uploaded GIF
+    came back with a failure message instead of a description. A single frame
+    describes the picture well enough — the middle one rather than the first,
+    which in a lot of animations is blank or a fade-in.
+    """
+    data = file_path.read_bytes()
+    if mime_type != "image/gif":
+        return data, mime_type
+
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(data)) as animation:
+            animation.seek(getattr(animation, "n_frames", 1) // 2)
+            buf = BytesIO()
+            animation.convert("RGB").save(buf, format="PNG")
+            return buf.getvalue(), "image/png"
+    except Exception:
+        return data, mime_type
+
+
 def generate_description(file_path: Path, mime_type: str) -> str:
     """Generate a description of the image/video using Gemini."""
     if not genai or not GEMINI_API_KEY:
         return "Gemini API not configured. No description generated."
-    
+
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
-        with open(file_path, "rb") as f:
-            data = f.read()
-            
+        data, mime_type = _describable_bytes(file_path, mime_type)
+
         response = client.models.generate_content(
             model="gemini-3.6-flash",
             contents=[

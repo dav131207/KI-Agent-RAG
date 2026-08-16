@@ -27,8 +27,8 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
   }, [isOpen])
 
   const processFile = (selected) => {
-    if (selected.size > 20 * 1024 * 1024) {
-      setError('File is too large (max 20MB)')
+    if (selected.size > 25 * 1024 * 1024) {
+      setError('File is too large (max 25MB)')
       return
     }
     setFile(selected)
@@ -145,7 +145,7 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
                     type="file" 
                     ref={inputRef} 
                     onChange={handleFileChange} 
-                    accept="image/*,video/mp4,video/webm" 
+                    accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" 
                     className="hidden" 
                   />
                   {preview ? (
@@ -158,7 +158,7 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
                     <div className="space-y-2 opacity-60">
                       <Upload size={32} className="mx-auto" />
                       <p className="text-sm font-medium">Click to select image or video</p>
-                      <p className="text-xs">Max 20MB</p>
+                      <p className="text-xs">Max 25MB</p>
                     </div>
                   )}
                 </div>

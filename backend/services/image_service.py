@@ -1,5 +1,6 @@
 """Image fetching, watermarking and proxying services."""
 
+import hashlib
 import os
 from io import BytesIO
 from pathlib import Path
@@ -8,10 +9,16 @@ from urllib.parse import quote
 
 import httpx
 from fastapi import HTTPException
-from PIL import Image
+from PIL import Image, ImageSequence
 from PIL.Image import Resampling
 
-from core.config import COMMUNITY_ART_DIR, IMAGE_API_BASE, MEMES_DIR, WATERMARK_PATH
+from core.config import (
+    COMMUNITY_ART_DIR,
+    DATA_DIR,
+    IMAGE_API_BASE,
+    MEMES_DIR,
+    WATERMARK_PATH,
+)
 
 _watermark_image: Optional[Image.Image] = None
 
@@ -48,6 +55,120 @@ def apply_watermark(base_image: Image.Image) -> Image.Image:
     layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
     layer.paste(mark, (x, y), mark)
     return Image.alpha_composite(base, layer)
+
+
+# Watermarking an animation costs work per frame — measured at roughly 70ns
+# per pixel, so a 480x480 GIF of 60 frames takes about a second. Past this
+# budget the GIF is served untouched, which keeps it moving instead of
+# freezing it to a single frame.
+MAX_ANIMATION_PIXELS = int(os.getenv("MAX_ANIMATION_PIXELS", str(30_000_000)))
+
+# The same picture is watermarked identically every time it is viewed, so the
+# result is cached by content. Without this every view of an animation repeats
+# the whole per-frame pass.
+_WATERMARK_CACHE_DIR = DATA_DIR / "cache" / "watermark"
+
+# Bounded by bytes rather than by entry count: uploads run to 25 MB, so a
+# fixed number of entries says nothing about how much disk they occupy. This
+# shares the volume with the database and the art itself.
+MAX_CACHE_BYTES = int(os.getenv("WATERMARK_CACHE_MB", "150")) * 1024 * 1024
+
+
+def _cache_paths(digest: str) -> tuple[Path, Path]:
+    return (
+        _WATERMARK_CACHE_DIR / f"{digest}.bin",
+        _WATERMARK_CACHE_DIR / f"{digest}.type",
+    )
+
+
+def _prune_cache() -> None:
+    """Keep the cache under its byte budget, oldest written out first."""
+    entries = []
+    for blob in _WATERMARK_CACHE_DIR.glob("*.bin"):
+        try:
+            stat = blob.stat()
+        except OSError:
+            continue
+        entries.append((stat.st_mtime, stat.st_size, blob))
+
+    total = sum(size for _, size, _ in entries)
+    if total <= MAX_CACHE_BYTES:
+        return
+
+    for _, size, blob in sorted(entries):
+        blob.unlink(missing_ok=True)
+        blob.with_suffix(".type").unlink(missing_ok=True)
+        total -= size
+        if total <= MAX_CACHE_BYTES:
+            return
+
+
+def _render_watermarked(data: bytes) -> tuple[bytes, str]:
+    """Watermark encoded image data. CPU-bound; callers run it in a thread."""
+    image = Image.open(BytesIO(data))
+    frame_count = getattr(image, "n_frames", 1)
+
+    if frame_count <= 1:
+        buf = BytesIO()
+        apply_watermark(image).save(buf, format="PNG")
+        return buf.getvalue(), "image/png"
+
+    width, height = image.size
+    if width * height * frame_count > MAX_ANIMATION_PIXELS:
+        return data, Image.MIME.get(image.format or "GIF", "image/gif")
+
+    # Pillow composes each frame against the ones before it while seeking, so
+    # converting to RGBA yields the full picture even for partial frames.
+    frames = [
+        apply_watermark(frame.convert("RGBA"))
+        for frame in ImageSequence.Iterator(image)
+    ]
+
+    buf = BytesIO()
+    frames[0].save(
+        buf,
+        format="GIF",
+        save_all=True,
+        append_images=frames[1:],
+        loop=image.info.get("loop", 0),
+        duration=image.info.get("duration", 100),
+        disposal=2,
+    )
+    return buf.getvalue(), "image/gif"
+
+
+def watermark_image_bytes(data: bytes) -> tuple[bytes, str]:
+    """
+    Watermark encoded image data, returning (bytes, media type).
+
+    Animated GIFs used to be opened, flattened to their first frame and written
+    back as a PNG, so an uploaded GIF reached the user as a still image. Every
+    frame is watermarked now and the animation is written back with save_all.
+
+    Results are cached on disk by content hash: identical input always produces
+    identical output, and re-running the per-frame pass on every view of the
+    same GIF is pure waste.
+    """
+    digest = hashlib.blake2b(data, digest_size=16).hexdigest()
+    blob_path, type_path = _cache_paths(digest)
+
+    try:
+        if blob_path.is_file() and type_path.is_file():
+            return blob_path.read_bytes(), type_path.read_text().strip()
+    except OSError:
+        pass  # an unreadable cache is a miss, not a failure
+
+    result, media_type = _render_watermarked(data)
+
+    try:
+        _WATERMARK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        blob_path.write_bytes(result)
+        type_path.write_text(media_type)
+        _prune_cache()
+    except OSError:
+        pass  # serving the image matters more than caching it
+
+    return result, media_type
 
 
 def extract_image_search_term(topic: Optional[str]) -> str:
