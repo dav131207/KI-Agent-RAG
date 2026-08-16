@@ -64,6 +64,8 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
     if (typeof ragChunks === 'number') metadata.rag_chunk_count = ragChunks
     if (ragChunkIds?.length) metadata.chunk_ids = ragChunkIds
     if (reason) metadata.reason = reason
+    // Credits the rating to the community-art piece this message displayed.
+    if (msg.artId != null) metadata.art_id = msg.artId
 
     trackEvent('feedback', {
       feedback: type,

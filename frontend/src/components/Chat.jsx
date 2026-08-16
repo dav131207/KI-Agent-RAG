@@ -77,6 +77,7 @@ export default function Chat({ isDark }) {
           role: 'assistant',
           text: data.art.description || `Here is some community art for ${label}!`,
           image: data.art.url,
+          artId: data.art.id,
           time: formatTime(new Date()),
         },
       ])

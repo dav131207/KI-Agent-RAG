@@ -28,7 +28,9 @@ export default function CommunityArtModal({ isOpen, onClose, onSubmit, isDark })
 
   if (!isOpen) return null
 
-  const filteredLabels = labels.filter(l => l.toLowerCase().includes(search.toLowerCase()))
+  const filteredLabels = labels.filter(l =>
+    l.label.toLowerCase().includes(search.toLowerCase())
+  )
 
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') {
@@ -36,7 +38,7 @@ export default function CommunityArtModal({ isOpen, onClose, onSubmit, isDark })
       return
     }
     if (e.key === 'Enter' && filteredLabels.length > 0) {
-      onSubmit(filteredLabels[0])
+      onSubmit(filteredLabels[0].label)
     }
   }
 
@@ -95,16 +97,21 @@ export default function CommunityArtModal({ isOpen, onClose, onSubmit, isDark })
             ) : (
               filteredLabels.map((l, idx) => (
                 <button
-                  key={l}
-                  onClick={() => onSubmit(l)}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-left transition-colors ${
-                    idx === 0 
-                      ? isDark ? 'bg-white/10' : 'bg-brand-50' 
+                  key={l.label}
+                  onClick={() => onSubmit(l.label)}
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl text-left transition-colors ${
+                    idx === 0
+                      ? isDark ? 'bg-white/10' : 'bg-brand-50'
                       : isDark ? 'hover:bg-white/5' : 'hover:bg-brand-50/50'
                   }`}
                 >
-                  <span className="font-medium">{l}</span>
-                  {idx === 0 && <span className={`text-[10px] flex items-center gap-1 px-2 py-1 rounded ${isDark ? 'bg-white/10 text-brand-300' : 'bg-brand-100 text-brand-600'}`}>Press <CornerDownLeft size={10}/></span>}
+                  <span className="font-medium truncate">{l.label}</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span className={`text-[11px] tabular-nums ${isDark ? 'text-brand-500' : 'text-brand-400'}`}>
+                      {l.count}
+                    </span>
+                    {idx === 0 && <span className={`text-[10px] flex items-center gap-1 px-2 py-1 rounded ${isDark ? 'bg-white/10 text-brand-300' : 'bg-brand-100 text-brand-600'}`}>Press <CornerDownLeft size={10}/></span>}
+                  </span>
                 </button>
               ))
             )}

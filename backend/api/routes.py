@@ -114,6 +114,20 @@ async def record_event(req: EventRequest, request: Request):
     """Record an analytics event from the frontend."""
     country = request.headers.get("CF-IPCountry")
     language = await detect_language_from_request(request, http)
+
+    # A thumbs on a community-art message also counts towards that piece's
+    # standing in the selection pool. Only the two plain ratings count — the
+    # follow-up "thumbs_down_reason" event refines the same vote, so counting
+    # it as well would record every downvote twice.
+    art_id = (req.metadata or {}).get("art_id")
+    if req.event_type == "feedback" and art_id is not None:
+        from services.art_service import record_art_vote
+
+        try:
+            record_art_vote(int(art_id), req.feedback or "")
+        except (TypeError, ValueError):
+            pass
+
     track_event(
         client_ip=get_client_host(request),
         event_type=req.event_type,
@@ -643,15 +657,27 @@ async def get_community_art_labels():
 
 @router.get("/community-art/random")
 async def get_random_community_art(label: str, request: Request):
-    from services.art_service import get_random_art
+    from services.art_service import get_random_art, record_impression
     art = get_random_art(label)
     if not art:
         raise HTTPException(status_code=404, detail="No art found for this label")
-    
+
+    record_impression(int(art["id"]))
+
     filename = str(art['filename'])
     if filename.lower().endswith(('.mp4', '.webm')):
         url = f"{request.base_url}community/{filename}"
     else:
         url = f"{request.base_url}api/watermark?path=/community/{filename}"
 
-    return {"art": {"url": url, "description": art["description"], "label": art["label"]}}
+    # The id travels with the response so a thumbs rating on the message can be
+    # credited back to this piece; without it the rating was recorded against
+    # the conversation and the artwork learned nothing.
+    return {
+        "art": {
+            "id": art["id"],
+            "url": url,
+            "description": art["description"],
+            "label": art["label"],
+        }
+    }

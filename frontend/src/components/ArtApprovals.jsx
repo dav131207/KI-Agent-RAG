@@ -96,11 +96,11 @@ export default function ArtApprovals({ token }) {
           {filteredArt.map(art => (
             <div key={art.id} className="border border-brand-100 dark:border-white/10 rounded-xl overflow-hidden bg-brand-50/50 dark:bg-brand-900/50 flex flex-col">
               <div className="aspect-square bg-black/10 flex items-center justify-center relative group">
-                <a href={art.status === 'approved' ? `${API_BASE}/memes/community/${art.filename}` : `${API_BASE}/data/uploads/${art.filename}`} target="_blank" rel="noreferrer" className="w-full h-full flex items-center justify-center p-2">
+                <a href={art.status === 'approved' ? `${API_BASE}/community/${art.filename}` : `${API_BASE}/data/uploads/${art.filename}`} target="_blank" rel="noreferrer" className="w-full h-full flex items-center justify-center p-2">
                   {art.filename.match(/\.(mp4|webm)$/i) ? (
-                    <video src={art.status === 'approved' ? `${API_BASE}/memes/community/${art.filename}` : `${API_BASE}/data/uploads/${art.filename}`} controls className="max-w-full max-h-full rounded" />
+                    <video src={art.status === 'approved' ? `${API_BASE}/community/${art.filename}` : `${API_BASE}/data/uploads/${art.filename}`} controls className="max-w-full max-h-full rounded" />
                   ) : (
-                    <img src={art.status === 'approved' ? `${API_BASE}/memes/community/${art.filename}` : `${API_BASE}/data/uploads/${art.filename}`} alt="art" className="max-w-full max-h-full rounded object-contain" />
+                    <img src={art.status === 'approved' ? `${API_BASE}/community/${art.filename}` : `${API_BASE}/data/uploads/${art.filename}`} alt="art" className="max-w-full max-h-full rounded object-contain" />
                   )}
                 </a>
               </div>
@@ -123,6 +123,18 @@ export default function ArtApprovals({ token }) {
                     {art.description}
                   </p>
                 </div>
+                {art.status === 'approved' && (
+                  <div>
+                    <label className="text-[10px] font-bold text-brand-500 uppercase">Community</label>
+                    <div className="flex items-center gap-3 mt-1 text-xs tabular-nums">
+                      <span className="text-[#0ca30c]" title="Thumbs up">👍 {art.ups ?? 0}</span>
+                      <span className="text-[#d03b3b]" title="Thumbs down">👎 {art.downs ?? 0}</span>
+                      <span className="text-brand-500" title="Times shown">
+                        {art.impressions ?? 0}× shown
+                      </span>
+                    </div>
+                  </div>
+                )}
                 <div className="mt-auto pt-3 border-t border-brand-100 dark:border-white/10 flex flex-wrap gap-2">
                   {filter !== 'approved' && (
                     <button 
