@@ -61,6 +61,11 @@ from services.language_service import (
     resolve_target_language,
     translate_text,
 )
+from services.rare_pepe_store import (
+    local_path_for as local_rare_pepe_path,
+    seed as seed_rare_pepes,
+    state as rare_pepe_state,
+)
 from services.rag_service import (
     get_random_pepe_meme,
     search_context_detailed,
@@ -102,6 +107,9 @@ async def health():
         # Reports whether backend/data outlived the previous deploy. Compare
         # first_seen across redeploys: unchanged means the volume persists.
         "storage": storage_state(),
+        # How much of the rare pepe collection is served from the volume rather
+        # than fetched from archive.org on demand.
+        "rare_pepes": rare_pepe_state(),
     }
 
 
@@ -162,6 +170,19 @@ async def verify_token(request: Request):
             status_code=401,
             detail="Invalid token",
         )
+
+
+@router.post("/admin/rare-pepes/seed")
+async def seed_rare_pepe_collection(request: Request, force: bool = False):
+    """
+    Download the rare pepe collection onto the volume. Admin only.
+
+    Runs to completion before answering, which can take minutes on a 183 MB
+    archive — deliberately, so the caller learns whether it worked instead of
+    having to poll for it.
+    """
+    check_admin_auth(request.headers.get("Authorization"))
+    return await asyncio.to_thread(seed_rare_pepes, force)
 
 
 @router.get("/analytics")
@@ -455,7 +476,19 @@ async def fetch_rare_pepe(req: RarePepeRequest, request: Request):
         filename = Path(file_path).name
 
     external_url = _extract_pepe_image_url(pepe)
-    url = build_watermarked_url(str(request.base_url), external_url, filename)
+
+    # A locally stored copy wins over the archive URL in the payload. Serving
+    # from the volume removes the on-demand zip extraction that made this
+    # command fail whenever archive.org was slow or unreachable; the remote URL
+    # stays as the fallback for anything not stored yet.
+    local = local_rare_pepe_path(external_url or "") if external_url else None
+    if local:
+        url = (
+            f"{request.base_url}api/watermark?path=/rare/"
+            f"{quote(local.name, safe='')}"
+        )
+    else:
+        url = build_watermarked_url(str(request.base_url), external_url, filename)
 
     description = pepe.get("description", "")
     explanation = pepe.get("explanation", "")

@@ -35,6 +35,8 @@ RATE_LIMITS = {
     "/api/chain-stats.png": (100, 60),
     "/api/community-art/upload": (5, 60),
     "/api/community-art/suggest": (60, 60),
+    # One call downloads 183 MB; it does not need to be available in bulk.
+    "/api/admin/rare-pepes/seed": (2, 60),
     "/api/ingest/text": (10, 60),
     "/api/ingest/file": (10, 60),
 }

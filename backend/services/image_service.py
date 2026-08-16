@@ -381,6 +381,14 @@ def validate_memes_path(path: str) -> Path:
     Community art lives on the persistent volume rather than under MEMES_DIR,
     so it has its own prefix.
     """
+    if path.startswith("/rare/"):
+        from services.rare_pepe_store import RARE_PEPE_DIR
+
+        return _resolve_under(
+            RARE_PEPE_DIR,
+            path[len("/rare/"):],
+            "Rare pepe collection not stored locally",
+        )
     if path.startswith("/community/"):
         return _resolve_under(
             COMMUNITY_ART_DIR,

@@ -28,6 +28,7 @@ from rag.qdrant_store import (
     set_meme_vectors_degenerate,
 )
 from services.crypto_service import get_pepe_market_data
+from services.rare_pepe_store import seed as seed_rare_pepes, state as rare_pepe_state
 from core.security import is_rate_limited, rate_limit_response
 from core.storage import record_boot
 from services.language_service import get_client_host
@@ -61,6 +62,17 @@ async def _warm_caches() -> None:
         await get_pepe_market_data(http)
     except Exception as e:  # never let warming break startup
         logger.warning("Cache warm-up failed: %s", e)
+
+    # Fetches the rare pepe collection onto the volume the first time it is
+    # missing. Detached and idempotent: it costs one large download after a
+    # fresh disk, and nothing at all once the images are there.
+    try:
+        if not rare_pepe_state()["files"]:
+            logger.info("Rare pepe collection not stored locally yet, fetching it")
+            result = await asyncio.to_thread(seed_rare_pepes, False)
+            logger.info("Rare pepe seeding: %s", result)
+    except Exception as e:
+        logger.warning("Rare pepe seeding could not start: %s", e)
 
     try:
         report = await asyncio.to_thread(describe_collections)
