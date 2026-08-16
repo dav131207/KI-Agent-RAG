@@ -75,7 +75,23 @@ _RATING_COLUMNS = {
     # the same second. This counter increments once per impression, so the
     # ordering is exact. last_shown_at stays for display in the dashboard.
     "shown_seq": "INTEGER NOT NULL DEFAULT 0",
+    # Lets the picker offer stills and animations separately. Stored rather
+    # than derived per query so filtering is a plain WHERE.
+    "media_type": "TEXT NOT NULL DEFAULT 'image'",
 }
+
+MEDIA_TYPES = ("image", "gif", "video")
+
+_EXTENSION_MEDIA = {
+    ".gif": "gif",
+    ".mp4": "video",
+    ".webm": "video",
+}
+
+
+def media_type_for(filename: str) -> str:
+    """Classify a file by extension; anything else is a still image."""
+    return _EXTENSION_MEDIA.get(Path(filename).suffix.lower(), "image")
 
 
 def init_db() -> None:
@@ -93,9 +109,21 @@ def init_db() -> None:
         """
     )
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(community_art)")}
+    added = set()
     for column, definition in _RATING_COLUMNS.items():
         if column not in existing:
             conn.execute(f"ALTER TABLE community_art ADD COLUMN {column} {definition}")
+            added.add(column)
+
+    if "media_type" in added:
+        # Rows that predate the column all carry the 'image' default, which is
+        # wrong for every GIF and video already uploaded. Classify them once.
+        for row in conn.execute("SELECT id, filename FROM community_art"):
+            conn.execute(
+                "UPDATE community_art SET media_type = ? WHERE id = ?",
+                (media_type_for(row["filename"]), row["id"]),
+            )
+
     conn.commit()
 
 init_db()
@@ -155,12 +183,21 @@ def add_art(filename: str, label: str, file_path: Path, mime_type: str) -> dict:
     description = generate_description(file_path, mime_type)
     conn = _get_conn()
     cur = conn.cursor()
+    media = media_type_for(filename)
     cur.execute(
-        "INSERT INTO community_art (filename, label, description, status, created_at) VALUES (?, ?, ?, ?, ?)",
-        (filename, label, description, "pending", int(time.time()))
+        "INSERT INTO community_art (filename, label, description, status, created_at, media_type)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (filename, label, description, "pending", int(time.time()), media)
     )
     conn.commit()
-    return {"id": cur.lastrowid, "filename": filename, "label": label, "description": description, "status": "pending"}
+    return {
+        "id": cur.lastrowid,
+        "filename": filename,
+        "label": label,
+        "description": description,
+        "status": "pending",
+        "media_type": media,
+    }
 
 def get_all_art() -> list[dict]:
     conn = _get_conn()
@@ -205,28 +242,54 @@ def get_labels() -> list[dict]:
     which put a category holding one unrated piece above one holding thirty
     well-rated ones. Ordering by how the community actually rated the contents
     makes the list a ranking instead of a dump.
+
+    Each entry carries a per-media breakdown so the picker can offer stills and
+    animations separately without a round trip per switch.
     """
     conn = _get_conn()
     rows = conn.execute(
         """
         SELECT label,
+               media_type,
                COUNT(*) AS pieces,
                SUM(ups) AS ups,
                SUM(downs) AS downs
         FROM community_art
         WHERE status = 'approved'
-        GROUP BY label
+        GROUP BY label, media_type
         """
     ).fetchall()
 
-    labels = [
-        {
-            "label": row["label"],
-            "count": row["pieces"],
-            "score": _wilson_lower_bound(row["ups"] or 0, row["downs"] or 0),
-        }
-        for row in rows
-    ]
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        entry = grouped.setdefault(
+            row["label"],
+            {
+                "label": row["label"],
+                "count": 0,
+                "ups": 0,
+                "downs": 0,
+                "media": {media: 0 for media in MEDIA_TYPES},
+            },
+        )
+        entry["count"] += row["pieces"]
+        entry["ups"] += row["ups"] or 0
+        entry["downs"] += row["downs"] or 0
+        # An unknown media_type would otherwise be silently dropped from the
+        # breakdown while still counting towards the total.
+        media = row["media_type"] if row["media_type"] in MEDIA_TYPES else "image"
+        entry["media"][media] += row["pieces"]
+
+    labels = []
+    for entry in grouped.values():
+        labels.append(
+            {
+                "label": entry["label"],
+                "count": entry["count"],
+                "score": _wilson_lower_bound(entry["ups"], entry["downs"]),
+                "media": entry["media"],
+            }
+        )
     labels.sort(key=lambda item: (-item["score"], -item["count"], item["label"].lower()))
     return labels
 
@@ -281,18 +344,22 @@ def _selection_weight(row: sqlite3.Row) -> float:
     return weight
 
 
-def get_random_art(label: str) -> Optional[dict]:
+def get_random_art(label: str, media: Optional[str] = None) -> Optional[dict]:
     """
     Pick an approved piece for a label, favouring what the community rated well.
 
     Sampling is weighted rather than top-scoring: always showing the current
     best would bury everything else permanently and stop new ratings arriving.
+    `media` narrows the pool to one of MEDIA_TYPES; None means any.
     """
     conn = _get_conn()
-    rows = conn.execute(
-        "SELECT * FROM community_art WHERE status = 'approved' AND label = ?",
-        (label,),
-    ).fetchall()
+    query = "SELECT * FROM community_art WHERE status = 'approved' AND label = ?"
+    params: list[Any] = [label]
+    if media in MEDIA_TYPES:
+        query += " AND media_type = ?"
+        params.append(media)
+
+    rows = conn.execute(query, params).fetchall()
     if not rows:
         return None
 

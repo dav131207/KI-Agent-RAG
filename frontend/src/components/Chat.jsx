@@ -62,13 +62,21 @@ export default function Chat({ isDark }) {
     handleSubmit(null, { id: 'social', display: labels['social'], send: prompt })
   }
 
-  const handleArtSubmit = async (label) => {
+  const handleArtSubmit = async (label, media) => {
     setIsArtModalOpen(false)
     setLoading(true)
-    const userMsg = { role: 'user', text: `Show me some Community Pepe Art for: ${label}`, time: formatTime(new Date()) }
+    const MEDIA_WORDS = { image: 'Images', gif: 'GIFs', video: 'Videos' }
+    const mediaPart = MEDIA_WORDS[media] ? ` (${MEDIA_WORDS[media]})` : ''
+    const userMsg = {
+      role: 'user',
+      text: `Show me some Community Pepe Art for: ${label}${mediaPart}`,
+      time: formatTime(new Date()),
+    }
     setMessages((prev) => [...prev, userMsg])
     try {
-      const res = await fetch(`${API_BASE}/api/community-art/random?label=${encodeURIComponent(label)}`)
+      const query = new URLSearchParams({ label })
+      if (media) query.set('media', media)
+      const res = await fetch(`${API_BASE}/api/community-art/random?${query}`)
       if (!res.ok) throw new Error('Failed to fetch art')
       const data = await res.json()
       setMessages((prev) => [
@@ -76,7 +84,9 @@ export default function Chat({ isDark }) {
         {
           role: 'assistant',
           text: data.art.description || `Here is some community art for ${label}!`,
-          image: data.art.url,
+          ...(data.art.media_type === 'video'
+            ? { video: data.art.url }
+            : { image: data.art.url }),
           artId: data.art.id,
           time: formatTime(new Date()),
         },

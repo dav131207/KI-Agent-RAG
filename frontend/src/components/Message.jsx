@@ -118,7 +118,20 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
 
       <div className={`max-w-[88%] sm:max-w-[85%] md:max-w-[80%] min-w-0 ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-1.5 sm:gap-2`}>
         <div className={`message-bubble-${isUser ? 'user' : 'agent'} px-3 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3.5 w-full`}>
-          {msg.image && (
+          {/* Community art can be a clip. It used to be handed to the same
+              <img> as the stills, which renders an mp4 as a broken image. */}
+          {msg.video ? (
+            <motion.video
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4 }}
+              src={msg.video}
+              controls
+              loop
+              playsInline
+              className="mb-2 sm:mb-3 rounded-xl max-w-full max-h-48 sm:max-h-56 md:max-h-64 h-auto w-auto mx-auto shadow-sm"
+            />
+          ) : msg.image && (
             <motion.img
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}

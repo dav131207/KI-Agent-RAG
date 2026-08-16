@@ -653,9 +653,20 @@ async def get_community_art_labels():
     return {"labels": get_labels()}
 
 @router.get("/community-art/random")
-async def get_random_community_art(label: str, request: Request):
-    from services.art_service import get_random_art, record_impression
-    art = get_random_art(label)
+async def get_random_community_art(
+    label: str, request: Request, media: Optional[str] = None
+):
+    from services.art_service import MEDIA_TYPES, get_random_art, record_impression
+
+    # Rejected rather than ignored: silently dropping an unrecognised filter
+    # would answer a request for a GIF with a still image.
+    if media and media not in MEDIA_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown media type. Expected one of: {', '.join(MEDIA_TYPES)}",
+        )
+
+    art = get_random_art(label, media)
     if not art:
         raise HTTPException(status_code=404, detail="No art found for this label")
 
@@ -676,5 +687,6 @@ async def get_random_community_art(label: str, request: Request):
             "url": url,
             "description": art["description"],
             "label": art["label"],
+            "media_type": art["media_type"],
         }
     }
