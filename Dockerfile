@@ -35,4 +35,12 @@ ENV WATERMARK_PATH=/app/backend/assets/watermark.png
 EXPOSE 8000
 
 WORKDIR /app/backend
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Render terminates TLS at its proxy and forwards over plain HTTP. Without
+# these flags uvicorn ignores X-Forwarded-Proto — its default trusts only
+# 127.0.0.1, and the proxy is not that — so request.base_url reported http://
+# on an https:// site. Every URL the API builds carried the wrong scheme, which
+# made the browser treat them as cross-origin: download links silently turned
+# into navigations. All traffic here arrives through the platform proxy, so
+# trusting its headers is the correct configuration.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]
