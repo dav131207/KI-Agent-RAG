@@ -38,7 +38,6 @@ const FORMATS = [
 // attaching one image blind.
 const VISUALS = [
   { id: 'Community', label: 'Community art', desc: 'Matched to the finished post, with alternatives to choose from' },
-  { id: 'Rare', label: 'Rare Pepe', desc: 'From the Rare Pepe collection' },
   { id: 'Random', label: 'Random Pepe', desc: 'A meme picked to fit the post' },
   { id: 'None', label: 'No image', desc: 'Text only' },
 ]

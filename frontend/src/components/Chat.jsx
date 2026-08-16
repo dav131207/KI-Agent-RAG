@@ -309,10 +309,7 @@ export default function Chat({ isDark }) {
       }
 
       if (isSocialCommand && !wantsChainCard && !wantsArtPicker && visual !== 'None') {
-        imageUrl =
-          visual === 'Rare'
-            ? await fetchRarePepe(fullText).then((p) => p.url).catch(() => null)
-            : await fetchImage(sendText, fullText)
+        imageUrl = await fetchImage(sendText, fullText)
       }
 
       let emoteUrl = null
@@ -380,10 +377,10 @@ export default function Chat({ isDark }) {
     }
   }
 
-  // `query` defaults to the generic term, which makes the endpoint fall back to
-  // the conversation. A social post passes its finished text instead, so the
-  // pepe is chosen against what the post actually says.
-  const fetchRarePepe = async (query = 'rare pepe') => {
+  // The generic term makes the endpoint fall back to the conversation for its
+  // search, which is what the Rare Pepe command wants.
+  const fetchRarePepe = async () => {
+    const query = 'rare pepe'
     const history = messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .slice(-10)
