@@ -8,6 +8,23 @@ const API_BASE = import.meta.env.VITE_API_URL || ''
 const EXTENSIONS = { image: 'png', gif: 'gif', video: 'mp4' }
 
 /**
+ * Filename for a downloaded piece, built from its category.
+ *
+ * The category often names the format — "GIF", "GIF Reactions" — which the
+ * extension already says, so a piece would save as GIF_Reactions.gif. The
+ * format word is dropped when the extension repeats it.
+ */
+export function downloadName(label, mediaType) {
+  const ext = EXTENSIONS[mediaType] || 'png'
+  const base = (label || '')
+    .replace(new RegExp(`\\b${ext}s?\\b`, 'gi'), ' ')
+    .trim()
+    .replace(/[^\w-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return `${base || 'community-art'}.${ext}`
+}
+
+/**
  * Community art shortlisted for a generated post.
  *
  * A shortlist rather than one automatic attachment, for the same reason the
@@ -121,11 +138,10 @@ export default function CommunityArtPicker({ text }) {
         </p>
         {/* Same reason the emote download is separate: X renders no markdown,
             so the file has to be attached by hand and the post text stays
-            clean. The extension follows the media type or the file saves
-            under a name nothing can open. */}
+            clean. */}
         <a
           href={active.url}
-          download={`${active.label.replace(/[^\w-]+/g, '_')}.${EXTENSIONS[active.media_type] || 'png'}`}
+          download={downloadName(active.label, active.media_type)}
           className="flex items-center gap-1 shrink-0 px-2 py-1 rounded-lg text-[10px] font-medium bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition-colors"
         >
           <Download size={10} />

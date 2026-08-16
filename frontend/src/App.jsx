@@ -5,8 +5,8 @@ import AdminDashboard from './components/AdminDashboard'
 import Chat from './components/Chat'
 import MobileBanner from './components/MobileBanner'
 import ParticlesBackground from './components/ParticlesBackground'
-import WalletConnect from './components/WalletConnect'
 import { trackEvent } from './lib/analytics'
+import { HeartHandshake } from 'lucide-react'
 
 const SUPPORT_ADDRESS = 'PhzpSqdSiMRNQ6ksCEDs4ufJtFfuyLCU9j'
 
@@ -161,7 +161,21 @@ export default function App() {
             </div>
 
             <div className="flex items-center justify-end">
-              <WalletConnect />
+              {/* Replaces the wallet Connect button. Donating is the only thing
+                  the header ever needed to offer, and the support address was
+                  reachable only by clicking the logo, which nothing announced. */}
+              <button
+                onClick={handleHeroClick}
+                className="flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold transition-all shadow-sm bg-accent/10 text-accent hover:bg-accent/20 border border-accent/30"
+              >
+                <HeartHandshake size={16} className="shrink-0" />
+                {/* Wraps to two lines on a narrow phone rather than pushing the
+                    logo off the header — shortening the label would drop the
+                    words that make it an invitation. */}
+                <span className="text-left leading-tight max-w-[5.5rem] sm:max-w-none sm:whitespace-nowrap">
+                  Help fund the project
+                </span>
+              </button>
             </div>
           </header>
 
