@@ -4,6 +4,7 @@ import { ThumbsDown, ThumbsUp } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import EmotePicker from './EmotePicker'
 import CommunityArtPicker from './CommunityArtPicker'
+import PepePicker from './PepePicker'
 import remarkGfm from 'remark-gfm'
 import { trackEvent } from '../lib/analytics'
 
@@ -148,6 +149,7 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
                 {msg.emote ? `${textWithLinks.trim()} ![emote](${msg.emote})` : textWithLinks}
               </ReactMarkdown>
               {msg.artPicker && <CommunityArtPicker text={msg.text} />}
+              {msg.pepePicker && <PepePicker topic={msg.pepeQuery} text={msg.text} />}
               {isSocialPost && <EmotePicker text={msg.text} />}
             </div>
           )}

@@ -249,9 +249,13 @@ export default function Chat({ isDark }) {
       // The chain card used to be forced by the goal alone. It is now what the
       // Data goal offers first, but the author can pick something else.
       const wantsChainCard = isSocialCommand && visual === 'Chain'
-      // Community art is shortlisted against the finished post inside the
-      // message, so nothing is fetched here.
+      // Community art and Pepes are both shortlisted against the finished post
+      // inside the message, so nothing is fetched here. A hand-typed social
+      // command carries no choice and gets the Pepe shortlist, which is what
+      // the dialog defaults to.
       const wantsArtPicker = isSocialCommand && visual === 'Community'
+      const wantsPepePicker =
+        isSocialCommand && !wantsChainCard && (visual === 'Random' || visual == null)
 
       let imageUrl = null
       // A social post's image is fetched after generation instead, so the
@@ -308,10 +312,6 @@ export default function Chat({ isDark }) {
         setTypingText(fullText)
       }
 
-      if (isSocialCommand && !wantsChainCard && !wantsArtPicker && visual !== 'None') {
-        imageUrl = await fetchImage(sendText, fullText)
-      }
-
       let emoteUrl = null
       if (fullText && Math.random() < 0.35) {
         emoteUrl = await fetchEmote(fullText)
@@ -329,6 +329,8 @@ export default function Chat({ isDark }) {
           ragChunkIds,
           isSocialPost: isSocialCommand,
           artPicker: wantsArtPicker,
+          pepePicker: wantsPepePicker,
+          pepeQuery: wantsPepePicker ? sendText : null,
         },
       ])
       setTypingText('')
@@ -416,7 +418,13 @@ export default function Chat({ isDark }) {
                 : null
             return (
               <div key={idx} onClick={(e) => {
-                if (e.target.tagName === 'IMG') setModalImage(e.target.src)
+                // Any <img> in a message opens the viewer, which also caught
+                // the thumbnails inside the pickers: choosing one threw the
+                // lightbox open on top of the preview it had just changed.
+                // Picker UI opts out with data-lightbox-ignore.
+                if (e.target.tagName !== 'IMG') return
+                if (e.target.closest('[data-lightbox-ignore]')) return
+                setModalImage(e.target.src)
               }}>
                 <Message msg={msg} isDark={isDark} userMessage={precedingUserMessage} ragChunks={msg.ragChunks} ragChunkIds={msg.ragChunkIds} isSocialPost={msg.isSocialPost} />
               </div>

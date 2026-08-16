@@ -35,16 +35,32 @@ export default function EmotePicker({ text }) {
   const active = selected || emotes[0]
 
   return (
-    <div className="mt-2 pt-2 border-t border-white/5">
+    /* data-lightbox-ignore: the message list opens a fullscreen viewer for any
+       <img> clicked inside a message, so picking an emote also threw the
+       lightbox open over it. Selecting is not asking to see it fullscreen. */
+    <div className="mt-2 pt-2 border-t border-white/5" data-lightbox-ignore>
       <p className="text-[10px] uppercase tracking-wider text-brand-500 dark:text-brand-400 mb-1.5">
         Add an emote
       </p>
+
+      {/* The thumbnails are 44px, too small to judge an emote by — and these
+          are animated, which a thumbnail that size hides entirely. */}
+      <div className="flex justify-center mb-2">
+        <img
+          src={active.preview_url}
+          alt={active.name}
+          className="h-24 w-auto object-contain drop-shadow-sm"
+        />
+      </div>
+
       <div className="flex items-center gap-2 flex-wrap">
         {emotes.map((emote) => (
           <button
             key={emote.name}
+            type="button"
             onClick={() => setSelected(emote)}
             title={emote.name}
+            aria-pressed={active.name === emote.name}
             className={`w-11 h-11 rounded-lg overflow-hidden border transition-colors ${
               active.name === emote.name
                 ? 'border-accent bg-accent/10'

@@ -19,6 +19,9 @@ class ImageRequest(BaseModel):
         default=None,
         description="Finished post text; ranks the candidates the topic found",
     )
+    count: Optional[int] = Field(
+        default=None, description="How many candidates to shortlist (/images only)"
+    )
 
 
 class EmoteRequest(BaseModel):

@@ -47,6 +47,7 @@ from services.image_service import (
     watermark_image_bytes,
     build_watermarked_url,
     extract_image_search_term,
+    fetch_onlypepes_candidates,
     fetch_onlypepes_image,
     get_watermark,
     validate_memes_path,
@@ -342,6 +343,33 @@ async def fetch_image(req: ImageRequest, request: Request):
         "url": watermarked_url,
         "description": pepe.get("description", ""),
         "tags": pepe.get("tags") or [],
+    }
+
+
+@router.post("/images")
+async def fetch_images(req: ImageRequest, request: Request):
+    """
+    Shortlist Pepe images for a post.
+
+    The single-image route decides for the reader; this one offers the choice,
+    which matters because a picture that misses the subject is worse under a
+    post than none.
+    """
+    limit = max(1, min(req.count or 4, 8))
+    candidates = await fetch_onlypepes_candidates(http, req.topic, req.context, limit)
+    return {
+        "images": [
+            {
+                # The index has no stable id of its own, so the image URL is
+                # what identifies a candidate in the picker.
+                "id": pepe.get("url") or index,
+                "url": build_watermarked_url(str(request.base_url), pepe.get("url"), None),
+                "description": pepe.get("description", ""),
+                "tags": pepe.get("tags") or [],
+            }
+            for index, pepe in enumerate(candidates)
+            if pepe.get("url")
+        ]
     }
 
 

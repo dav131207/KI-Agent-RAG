@@ -21,6 +21,7 @@ RATE_LIMITS = {
     "/api/chat": (30, 60),
     "/api/rare_pepe": (20, 60),
     "/api/image": (30, 60),
+    "/api/images": (30, 60),
     "/api/get_coins": (20, 60),
     "/api/emote": (60, 60),
     "/api/emotes/suggest": (60, 60),

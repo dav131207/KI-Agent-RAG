@@ -232,16 +232,22 @@ def _relevance(query: str, item: dict) -> int:
     return len(words & present)
 
 
-async def fetch_onlypepes_image(
-    http_client: httpx.AsyncClient, topic: Optional[str], context: Optional[str] = None
-) -> dict:
+async def fetch_onlypepes_candidates(
+    http_client: httpx.AsyncClient,
+    topic: Optional[str],
+    context: Optional[str] = None,
+    limit: int = 1,
+) -> list[dict]:
     """
-    Fetch a Pepe image from the OnlyPepes API.
+    Fetch Pepe images from the OnlyPepes API, best match first.
 
     `topic` is the search query — narrow, so the index returns candidates at
     all. `context` is what they are ranked against, and should be the finished
     post: a one-word topic scores every candidate identically, while the post
     text has enough words to tell them apart.
+
+    `limit` is how many to hand back. Asking for several lets the caller offer
+    a choice instead of deciding for the reader.
     """
     topic = extract_image_search_term(topic)
     is_pure_random = not topic or topic.lower() in {"random meme", "random pepe", "random"}
@@ -250,7 +256,7 @@ async def fetch_onlypepes_image(
     # and it shuffles the matches far enough that the relevant ones drop out —
     # measured: 1 of 5 results mentioned the search term without it, 0 of 5
     # with it. Randomise only when there is nothing to match against.
-    params: dict = {"limit": 1 if is_pure_random else 10}
+    params: dict = {"limit": limit if is_pure_random else max(10, limit)}
     if is_pure_random:
         params["random"] = "true"
     else:
@@ -276,15 +282,22 @@ async def fetch_onlypepes_image(
     if candidates and not is_pure_random:
         candidates.sort(key=lambda item: _relevance(context or topic, item), reverse=True)
 
-    # A precise topic can legitimately match nothing. Falling back to a random
-    # image keeps a post illustrated instead of failing the whole request.
+    # A precise topic can legitimately match nothing. Falling back to random
+    # images keeps a post illustrated instead of failing the whole request.
     if not candidates and not is_pure_random:
-        candidates = await _query({"limit": 1, "random": "true"})
+        candidates = await _query({"limit": limit, "random": "true"})
 
     if not candidates:
         raise HTTPException(status_code=404, detail="No image found")
 
-    return candidates[0]
+    return candidates[:limit]
+
+
+async def fetch_onlypepes_image(
+    http_client: httpx.AsyncClient, topic: Optional[str], context: Optional[str] = None
+) -> dict:
+    """Fetch the single best-matching Pepe image."""
+    return (await fetch_onlypepes_candidates(http_client, topic, context, limit=1))[0]
 
 
 def build_watermarked_url(base_url: str, external_url: Optional[str], filename: Optional[str]) -> Optional[str]:
