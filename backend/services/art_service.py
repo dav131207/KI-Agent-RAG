@@ -1,6 +1,7 @@
 """Community Art service for Professor Pepe."""
 
 import hashlib
+import logging
 import math
 import random
 import shutil
@@ -54,6 +55,8 @@ def _migrate_legacy_community_files() -> None:
             shutil.move(str(old), str(target))
         except Exception:
             pass
+
+logger = logging.getLogger(__name__)
 
 _local = threading.local()
 
@@ -203,14 +206,57 @@ def _describable_bytes(file_path: Path, mime_type: str) -> tuple[bytes, str]:
         return data, mime_type
 
 
-def generate_description(file_path: Path, mime_type: str) -> str:
-    """Generate a description of the image/video using Gemini."""
+def all_labels() -> list[str]:
+    """Every category in use, whatever its approval status."""
+    return [
+        row["label"]
+        for row in _get_conn().execute(
+            "SELECT label, COUNT(*) AS n FROM community_art"
+            " GROUP BY label ORDER BY n DESC LIMIT 60"
+        )
+    ]
+
+
+# Asked for as one call rather than two: the picture is uploaded once and a
+# second vision request would double the cost and the wait for no new
+# information. Existing categories are offered back to the model because
+# free-text naming is what produced "Infographic", "infographic" and
+# "Infographics" as three separate categories in the first place.
+_DESCRIBE_PROMPT = """Look at this image, GIF or video from a Pepecoin community member.
+
+Answer with JSON only, no code fence:
+{{"label": "...", "description": "..."}}
+
+"label" is the category it belongs in: two to four words, Title Case, naming
+what the picture IS rather than what it shows in detail — the kind of heading
+you would put above a shelf of similar pictures.
+Reuse one of these existing categories EXACTLY as written when it fits:
+{existing}
+Only invent a new one when none of them apply.
+
+"description" is one to three sentences describing the picture for a community
+member, concrete enough that someone searching for this picture by its subject
+would find it."""
+
+
+def describe_and_label(file_path: Path, mime_type: str) -> tuple[str, str]:
+    """
+    Ask the model what this picture is and where it belongs.
+
+    Returns (label, description). Falls back to a usable pair rather than
+    raising: an upload should never be lost because the vision call failed.
+    """
+    fallback = ("Community Art", "")
     if not genai or not GEMINI_API_KEY:
-        return "Gemini API not configured. No description generated."
+        return ("Community Art", "Gemini API not configured. No description generated.")
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         data, mime_type = _describable_bytes(file_path, mime_type)
+        existing = all_labels()
+        prompt = _DESCRIBE_PROMPT.format(
+            existing="\n".join(f"- {name}" for name in existing) or "- (none yet)"
+        )
 
         response = client.models.generate_content(
             model="gemini-3.6-flash",
@@ -219,14 +265,54 @@ def generate_description(file_path: Path, mime_type: str) -> str:
                     role="user",
                     parts=[
                         types.Part.from_bytes(data=data, mime_type=mime_type),
-                        types.Part.from_text(text="Describe this image/GIF/video briefly (1-3 sentences) as if you are summarizing it for a Pepecoin community member.")
-                    ]
+                        types.Part.from_text(text=prompt),
+                    ],
                 )
             ],
         )
-        return response.text or "No description generated."
+        return _parse_label_response(response.text or "", existing, fallback)
     except Exception as e:
-        return f"Failed to generate description: {e}"
+        logger.warning("Describing an upload failed: %s", e)
+        return (fallback[0], f"Failed to generate description: {e}")
+
+
+def _parse_label_response(
+    text: str, existing: list[str], fallback: tuple[str, str]
+) -> tuple[str, str]:
+    """Pull the label and description out of the model's answer."""
+    import json
+    import re
+
+    # Models fence JSON even when told not to, and sometimes add a sentence
+    # around it, so the object is located rather than assumed.
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return (fallback[0], text.strip() or fallback[1])
+
+    try:
+        parsed = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return (fallback[0], text.strip() or fallback[1])
+
+    label = str(parsed.get("label") or "").strip().strip('"')
+    description = str(parsed.get("description") or "").strip()
+
+    # Snapped back to an existing category when it differs only in case or
+    # spacing, so near-duplicates do not accumulate.
+    normalised = {name.lower().strip(): name for name in existing}
+    label = normalised.get(label.lower(), label)
+
+    # A runaway label would end up as a category heading, so it is bounded.
+    if not label or len(label) > 40:
+        label = fallback[0]
+
+    return (label, description or fallback[1])
+
+
+def generate_description(file_path: Path, mime_type: str) -> str:
+    """Description only, for callers that already have a category."""
+    return describe_and_label(file_path, mime_type)[1]
+
 
 def add_art(
     filename: str,
@@ -235,7 +321,11 @@ def add_art(
     mime_type: str,
     content_hash: str = "",
 ) -> dict:
-    description = generate_description(file_path, mime_type)
+    # An empty label means "you decide": the model names the category from the
+    # picture itself, which is both more consistent than what uploaders typed
+    # and one less thing to ask them for.
+    generated_label, description = describe_and_label(file_path, mime_type)
+    label = (label or "").strip() or generated_label
     conn = _get_conn()
     cur = conn.cursor()
     media = media_type_for(filename)

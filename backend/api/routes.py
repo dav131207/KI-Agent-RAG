@@ -674,7 +674,35 @@ from api.schemas import ArtUpdateRequest
 # Gemini vision calls or fill the volume.
 MAX_UPLOAD_FILES = int(os.getenv("MAX_UPLOAD_FILES", "15"))
 
-ALLOWED_UPLOAD_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".mp4", ".webm"}
+# Everything Pillow can actually decode, plus the two video containers that
+# are served untouched. webp especially: it is what most images downloaded
+# from the web are today, and leaving it out rejected them with no hint why.
+ALLOWED_UPLOAD_SUFFIXES = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp", ".tif", ".tiff",
+    ".mp4", ".webm",
+}
+
+# Named separately so the refusal can say what to do about it. HEIC is what an
+# iPhone produces by default and needs a decoder this image is not built with.
+UNSUPPORTED_HINTS = {
+    ".heic": "iPhone HEIC — export it as JPEG first",
+    ".heif": "HEIF — export it as JPEG first",
+    ".mov": "QuickTime — convert it to MP4 first",
+}
+
+# Used when a file arrives without a usable extension, which happens for
+# pasted images and some mobile pickers.
+CONTENT_TYPE_SUFFIX = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/avif": ".avif",
+    "image/bmp": ".bmp",
+    "image/tiff": ".tif",
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+}
 
 
 async def _store_one(upload: UploadFile, label: str) -> dict:
@@ -689,7 +717,16 @@ async def _store_one(upload: UploadFile, label: str) -> dict:
     name = upload.filename or "unnamed"
     ext = Path(name).suffix.lower()
     if ext not in ALLOWED_UPLOAD_SUFFIXES:
-        return {"filename": name, "status": "rejected", "reason": "Unsupported format"}
+        # A file picked from a paste buffer or some mobile pickers arrives
+        # without an extension; its content type still says what it is.
+        ext = CONTENT_TYPE_SUFFIX.get((upload.content_type or "").lower(), ext)
+
+    if ext not in ALLOWED_UPLOAD_SUFFIXES:
+        reason = UNSUPPORTED_HINTS.get(ext) or (
+            f"Unsupported format {ext}" if ext else "Unrecognised file type"
+        )
+        logger.info("Upload refused: %s (%s)", name, reason)
+        return {"filename": name, "status": "rejected", "reason": reason}
 
     new_filename = f"{uuid.uuid4().hex}{ext}"
     file_path = UPLOADS_DIR / new_filename
@@ -710,7 +747,9 @@ async def _store_one(upload: UploadFile, label: str) -> dict:
                 buffer.write(chunk)
     except Exception as e:
         file_path.unlink(missing_ok=True)
-        return {"filename": name, "status": "rejected", "reason": str(e) or "Write failed"}
+        reason = str(e) or "Write failed"
+        logger.info("Upload refused: %s (%s)", name, reason)
+        return {"filename": name, "status": "rejected", "reason": reason}
 
     if not written:
         file_path.unlink(missing_ok=True)
@@ -738,7 +777,7 @@ async def _store_one(upload: UploadFile, label: str) -> dict:
 
 @router.post("/community-art/upload")
 async def upload_community_art(
-    label: str = Form(...),
+    label: str = Form(default=""),
     files: list[UploadFile] = File(default=[]),
     file: UploadFile = File(default=None),
 ):
@@ -748,6 +787,10 @@ async def upload_community_art(
     A picture already in the library is recognised by its content rather than
     its name, so re-uploading one costs nothing and does not create a second
     entry for the same image.
+
+    The category is optional. Left out, it is named by the model from the
+    picture itself, which is more consistent than what uploaders typed and
+    removes the one field they had to fill in.
     """
     # `file` is the single-upload field the earlier version used; accepted so
     # an older client, or a cached bundle, keeps working.

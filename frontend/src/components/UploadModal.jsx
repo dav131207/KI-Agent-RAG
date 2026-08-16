@@ -6,11 +6,13 @@ const API_BASE = import.meta.env.VITE_API_URL || ''
 
 const MAX_FILES = 15
 const MAX_BYTES = 25 * 1024 * 1024
-const ACCEPTED = 'image/png,image/jpeg,image/gif,video/mp4,video/webm'
+// Matches what the server accepts. webp was missing from both, which is how a
+// perfectly ordinary downloaded image came back refused.
+const ACCEPTED =
+  'image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp,image/tiff,video/mp4,video/webm'
 
 export default function UploadModal({ isOpen, onClose, isDark }) {
   const [files, setFiles] = useState([])
-  const [label, setLabel] = useState('')
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState(null)
   const [error, setError] = useState('')
@@ -20,7 +22,6 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
   useEffect(() => {
     if (isOpen) {
       setFiles([])
-      setLabel('')
       setLoading(false)
       setResults(null)
       setError('')
@@ -77,12 +78,11 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
   }
 
   const handleUpload = async () => {
-    if (!files.length || !label.trim()) return
+    if (!files.length) return
     setLoading(true)
     setError('')
 
     const formData = new FormData()
-    formData.append('label', label.trim())
     files.forEach((entry) => formData.append('files', entry.file))
 
     try {
@@ -160,8 +160,22 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
                     return (
                       <div key={index} className="flex items-start gap-2 text-xs">
                         <Icon size={14} className={`${style.className} shrink-0 mt-0.5`} />
-                        <span className="truncate flex-1" title={entry.filename}>
-                          {entry.filename}
+                        <span className="flex-1 min-w-0">
+                          <span className="block truncate" title={entry.filename}>
+                            {entry.filename}
+                          </span>
+                          {/* The server says why it refused a file; showing
+                              only the verdict left nothing to act on. */}
+                          {entry.reason && (
+                            <span className="block opacity-60 text-[10px]">
+                              {entry.reason}
+                            </span>
+                          )}
+                          {entry.art?.label && (
+                            <span className="block opacity-60 text-[10px]">
+                              Filed under “{entry.art.label}”
+                            </span>
+                          )}
                         </span>
                         <span className={`${style.className} shrink-0 font-medium`}>
                           {style.word}
@@ -241,30 +255,16 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold opacity-80">Category / Label</label>
-                  <input
-                    value={label}
-                    onChange={(e) => setLabel(e.target.value)}
-                    placeholder="e.g. Infographic, Pep Meme GM, Comparison"
-                    className={`w-full px-4 py-2 rounded-lg border outline-none focus:border-accent ${
-                      isDark
-                        ? 'bg-black/20 border-white/10 placeholder:text-white/30'
-                        : 'bg-brand-50 border-brand-200 placeholder:text-brand-400'
-                    }`}
-                  />
-                  {files.length > 1 && (
-                    <p className="text-xs opacity-60">
-                      Applies to all {files.length} files.
-                    </p>
-                  )}
-                </div>
+                <p className="text-xs opacity-60 text-center">
+                  Each file is categorised and described automatically from what
+                  it shows — nothing to fill in.
+                </p>
 
                 {error && <p className="text-red-500 text-sm font-medium text-center">{error}</p>}
 
                 <button
                   onClick={handleUpload}
-                  disabled={!files.length || !label.trim() || loading}
+                  disabled={!files.length || loading}
                   className="w-full py-3 rounded-lg bg-accent text-white font-bold disabled:opacity-50 transition-opacity flex items-center justify-center gap-2 shadow-lg shadow-accent/20"
                 >
                   {loading ? (
