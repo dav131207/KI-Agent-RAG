@@ -106,8 +106,14 @@ export default function ArtApprovals({ token }) {
               </div>
               <div className="p-4 flex-1 flex flex-col gap-3">
                 <div>
-                  <label className="text-[10px] font-bold text-brand-500 uppercase">Label</label>
-                  <input 
+                  {/* Named by the model from the picture, not typed by whoever
+                      uploaded it — that is what produced near-duplicate
+                      categories. Still editable here, because correcting one
+                      bad name is an approval decision like any other. */}
+                  <label className="text-[10px] font-bold text-brand-500 uppercase">
+                    Name <span className="font-normal normal-case opacity-60">— set automatically</span>
+                  </label>
+                  <input
                     defaultValue={art.label}
                     onBlur={(e) => {
                       if (e.target.value !== art.label) {
@@ -118,7 +124,7 @@ export default function ArtApprovals({ token }) {
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-brand-500 uppercase">Gemini Description</label>
+                  <label className="text-[10px] font-bold text-brand-500 uppercase">Description</label>
                   <p className="text-xs mt-1 text-brand-700 dark:text-brand-300 line-clamp-3" title={art.description}>
                     {art.description}
                   </p>

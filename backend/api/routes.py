@@ -896,7 +896,10 @@ async def get_community_art_labels():
 
 @router.get("/community-art/random")
 async def get_random_community_art(
-    label: str, request: Request, media: Optional[str] = None
+    request: Request,
+    label: Optional[str] = None,
+    media: Optional[str] = None,
+    q: Optional[str] = None,
 ):
     from services.art_service import MEDIA_TYPES, get_random_art, record_impression
 
@@ -908,9 +911,12 @@ async def get_random_community_art(
             detail=f"Unknown media type. Expected one of: {', '.join(MEDIA_TYPES)}",
         )
 
-    art = get_random_art(label, media)
+    art = get_random_art(label, media, q)
     if not art:
-        raise HTTPException(status_code=404, detail="No art found for this label")
+        raise HTTPException(
+            status_code=404,
+            detail="No community art matches that yet",
+        )
 
     record_impression(int(art["id"]))
     url = _community_art_url(request, str(art["filename"]))
@@ -925,5 +931,8 @@ async def get_random_community_art(
             "description": art["description"],
             "label": art["label"],
             "media_type": art["media_type"],
+            # Says whether the words asked for actually landed, so the chat can
+            # avoid claiming a match it did not make.
+            "matched_query": art.get("matched_query", False),
         }
     }

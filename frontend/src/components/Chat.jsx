@@ -65,28 +65,41 @@ export default function Chat({ isDark }) {
     handleSubmit(null, { id: 'social', display: labels['social'], send: prompt, visual })
   }
 
-  const handleArtSubmit = async (label, media) => {
+  const handleArtSubmit = async (wanted, media) => {
     setIsArtModalOpen(false)
     setLoading(true)
-    const MEDIA_WORDS = { image: 'Images', gif: 'GIFs', video: 'Videos' }
-    const mediaPart = MEDIA_WORDS[media] ? ` (${MEDIA_WORDS[media]})` : ''
+    const MEDIA_WORDS = { image: 'an image', gif: 'a GIF', video: 'a video' }
+    const parts = [MEDIA_WORDS[media] || 'something', wanted && `about ${wanted}`]
     const userMsg = {
       role: 'user',
-      text: `Show me some Community Pepe Art for: ${label}${mediaPart}`,
+      text: `Show me ${parts.filter(Boolean).join(' ')} from the community`,
       time: formatTime(new Date()),
     }
     setMessages((prev) => [...prev, userMsg])
     try {
-      const query = new URLSearchParams({ label })
+      const query = new URLSearchParams()
+      if (wanted) query.set('q', wanted)
       if (media) query.set('media', media)
       const res = await fetch(`${API_BASE}/api/community-art/random?${query}`)
-      if (!res.ok) throw new Error('Failed to fetch art')
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null)
+        throw new Error(detail?.detail || 'Failed to fetch art')
+      }
       const data = await res.json()
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          text: data.art.description || `Here is some community art for ${label}!`,
+          // Says plainly when the words did not land, rather than presenting
+          // an unrelated picture as if it were the thing that was asked for.
+          text: [
+            wanted && !data.art.matched_query
+              ? `Nothing matched “${wanted}”, so here is something else from the community:`
+              : null,
+            data.art.description || 'Here is some community art!',
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
           ...(data.art.media_type === 'video'
             ? { video: data.art.url }
             : { image: data.art.url }),

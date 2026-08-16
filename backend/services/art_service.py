@@ -490,22 +490,34 @@ def _selection_weight(row: sqlite3.Row) -> float:
     return weight
 
 
-def get_random_art(label: str, media: Optional[str] = None) -> Optional[dict]:
+def get_random_art(
+    label: Optional[str] = None,
+    media: Optional[str] = None,
+    query: Optional[str] = None,
+) -> Optional[dict]:
     """
-    Pick an approved piece for a label, favouring what the community rated well.
+    Draw one approved piece, favouring what the community rated well.
+
+    All three narrowings are optional and combine: `label` is an exact
+    category, `media` one of MEDIA_TYPES, `query` free text matched against the
+    description and the category. Nothing given means the whole library.
 
     Sampling is weighted rather than top-scoring: always showing the current
     best would bury everything else permanently and stop new ratings arriving.
-    `media` narrows the pool to one of MEDIA_TYPES; None means any.
+    A free-text query multiplies the weight instead of filtering outright, so
+    a word that matches nothing still returns a picture rather than nothing.
     """
     conn = _get_conn()
-    query = "SELECT * FROM community_art WHERE status = 'approved' AND label = ?"
-    params: list[Any] = [label]
+    sql = "SELECT * FROM community_art WHERE status = 'approved'"
+    params: list[Any] = []
+    if label:
+        sql += " AND label = ?"
+        params.append(label)
     if media in MEDIA_TYPES:
-        query += " AND media_type = ?"
+        sql += " AND media_type = ?"
         params.append(media)
 
-    rows = conn.execute(query, params).fetchall()
+    rows = conn.execute(sql, params).fetchall()
     if not rows:
         return None
 
@@ -515,10 +527,27 @@ def get_random_art(label: str, media: Optional[str] = None) -> Optional[dict]:
         if (most_recent["shown_seq"] or 0) > 0:
             rows = [r for r in rows if r["id"] != most_recent["id"]]
 
-    weights = [_selection_weight(r) for r in rows]
+    wanted = _tokens(query or "")
+    weights = []
+    matched_any = False
+    for row in rows:
+        weight = _selection_weight(row)
+        if wanted:
+            candidate = _tokens(f"{row['description'] or ''} {row['label']}")
+            overlap = len(wanted & candidate)
+            if overlap:
+                matched_any = True
+                # Multiplied, not filtered: a request for something the
+                # library does not have still answers with a picture, just
+                # without the boost.
+                weight *= 1 + 4 * overlap
+        weights.append(weight)
+
     total = sum(weights)
     chosen = random.choices(rows, weights=weights, k=1)[0] if total > 0 else random.choice(rows)
-    return dict(chosen)
+    result = dict(chosen)
+    result["matched_query"] = bool(wanted) and matched_any
+    return result
 
 
 def record_impression(art_id: int, sequence: bool = True) -> None:
