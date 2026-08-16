@@ -52,14 +52,17 @@ export default function Chat({ isDark }) {
     return ROTATING_METRICS[Math.floor(Math.random() * ROTATING_METRICS.length)]
   }
 
-  const handleSocialSubmit = ({ platform, language, goal, format, topic }) => {
+  const handleSocialSubmit = ({ platform, language, goal, format, visual, topic }) => {
     setIsSocialModalOpen(false)
     // Format only applies to Twitter; the other platforms have no 280 limit.
     const formatPart = format ? ` Format: ${format}.` : ''
     const prompt =
       `create a social media post. Platform: ${platform}. Language: ${language}. ` +
       `Goal: ${goal}.${formatPart} Topic: ${topic}`
-    handleSubmit(null, { id: 'social', display: labels['social'], send: prompt })
+    // The image source stays out of the prompt: it changes what gets attached,
+    // not what the model should write, and the backend parser would only see
+    // an unknown field.
+    handleSubmit(null, { id: 'social', display: labels['social'], send: prompt, visual })
   }
 
   const handleArtSubmit = async (label, media) => {
@@ -158,6 +161,7 @@ export default function Chat({ isDark }) {
     const displayText = command ? command.display : input.trim()
     const sendText = command ? command.send : input.trim()
     const commandId = command ? command.id : null
+    const visual = command ? command.visual : null
     if (!displayText || !sendText || loading) return
 
     const startTime = performance.now()
@@ -242,10 +246,12 @@ export default function Chat({ isDark }) {
     try {
       const wantsImage = /\b(show|image|picture|pic|photo|visual|draw|meme)\b/i.test(sendText)
       const isSocialCommand = /^create\s+a?\s*social\s+media\s+post/i.test(sendText)
-      // A mining/synergy post argues from network data, so it gets the live
-      // on-chain card instead of a random meme, which would undercut it.
-      const wantsChainCard =
-        isSocialCommand && /Goal:\s*Data\b/i.test(sendText)
+      // The chain card used to be forced by the goal alone. It is now what the
+      // Data goal offers first, but the author can pick something else.
+      const wantsChainCard = isSocialCommand && visual === 'Chain'
+      // Community art is shortlisted against the finished post inside the
+      // message, so nothing is fetched here.
+      const wantsArtPicker = isSocialCommand && visual === 'Community'
 
       let imageUrl = null
       // A social post's image is fetched after generation instead, so the
@@ -302,8 +308,11 @@ export default function Chat({ isDark }) {
         setTypingText(fullText)
       }
 
-      if (isSocialCommand && !wantsChainCard) {
-        imageUrl = await fetchImage(sendText, fullText)
+      if (isSocialCommand && !wantsChainCard && !wantsArtPicker && visual !== 'None') {
+        imageUrl =
+          visual === 'Rare'
+            ? await fetchRarePepe(fullText).then((p) => p.url).catch(() => null)
+            : await fetchImage(sendText, fullText)
       }
 
       let emoteUrl = null
@@ -322,6 +331,7 @@ export default function Chat({ isDark }) {
           ragChunks,
           ragChunkIds,
           isSocialPost: isSocialCommand,
+          artPicker: wantsArtPicker,
         },
       ])
       setTypingText('')
@@ -370,7 +380,10 @@ export default function Chat({ isDark }) {
     }
   }
 
-  const fetchRarePepe = async () => {
+  // `query` defaults to the generic term, which makes the endpoint fall back to
+  // the conversation. A social post passes its finished text instead, so the
+  // pepe is chosen against what the post actually says.
+  const fetchRarePepe = async (query = 'rare pepe') => {
     const history = messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .slice(-10)
@@ -379,7 +392,7 @@ export default function Chat({ isDark }) {
     const res = await fetch(`${API_BASE}/api/rare_pepe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'rare pepe', history }),
+      body: JSON.stringify({ query, history }),
     })
     if (!res.ok) throw new Error('No rare pepe found')
     return res.json()

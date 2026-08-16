@@ -375,20 +375,131 @@ def get_random_art(label: str, media: Optional[str] = None) -> Optional[dict]:
     return dict(chosen)
 
 
-def record_impression(art_id: int) -> None:
-    """Count that a piece was shown, so exploration and rates have a base."""
+def record_impression(art_id: int, sequence: bool = True) -> None:
+    """
+    Count that a piece was shown, so exploration and rates have a base.
+
+    `sequence` advances the "shown last" counter. A shortlist displays several
+    pieces at once, and marking all of them as the most recent would make the
+    no-repeat rule exclude an arbitrary one of them from the next single draw.
+    """
     conn = _get_conn()
-    conn.execute(
-        """
-        UPDATE community_art
-        SET impressions = impressions + 1,
-            last_shown_at = ?,
-            shown_seq = (SELECT COALESCE(MAX(shown_seq), 0) + 1 FROM community_art)
-        WHERE id = ?
-        """,
-        (int(time.time()), art_id),
-    )
+    if sequence:
+        conn.execute(
+            """
+            UPDATE community_art
+            SET impressions = impressions + 1,
+                last_shown_at = ?,
+                shown_seq = (SELECT COALESCE(MAX(shown_seq), 0) + 1 FROM community_art)
+            WHERE id = ?
+            """,
+            (int(time.time()), art_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE community_art SET impressions = impressions + 1, last_shown_at = ?"
+            " WHERE id = ?",
+            (int(time.time()), art_id),
+        )
     conn.commit()
+
+
+# Words carried by almost every post, so matching on them would rank by post
+# length rather than by subject.
+_STOPWORDS = frozenset("""
+a an and are as at be been but by can do does for from get got had has have he
+her his how i if in into is it its just like me more most my no not of off on
+one only or our out over own she so some such than that the their them then
+there these they this those to too up us was we were what when where which who
+why will with you your
+der die das und ist sind ein eine einen einem eines dem den des auf aus bei mit
+nach von vor zu zum zur im in ist es sich auch nicht noch nur oder aber wie was
+wer wo wenn dann als am an für über unter durch gegen ohne um sehr mehr
+""".split())
+
+
+def _tokens(text: str) -> set:
+    """Content words, lowercased. Handles, hashtags and URLs are noise here."""
+    import re
+
+    text = re.sub(r"https?://\S+", " ", text or "")
+    text = re.sub(r"[@#$]\w+", " ", text)
+    return {
+        word
+        for word in re.findall(r"[a-zA-ZäöüßÄÖÜ]{3,}", text.lower())
+        if word not in _STOPWORDS
+    }
+
+
+# How far the community rating may move a suggestion. Small on purpose: it
+# should separate two comparable matches, never lift a well-liked piece above
+# one that actually fits the post.
+RATING_INFLUENCE = 0.25
+
+
+def suggest_art(text: str, limit: int = 4, media: Optional[str] = None) -> dict:
+    """
+    Shortlist approved community art that fits a piece of text.
+
+    Scored on word overlap against the Gemini description and the label rather
+    than by embedding: the library is small enough that a scan costs nothing,
+    and an embedding call here would add hundreds of milliseconds to a post
+    that has already been generated.
+
+    Falls back to the best-rated pieces when nothing matches, so the picker is
+    never empty — the caller is told which happened.
+    """
+    conn = _get_conn()
+    query = "SELECT * FROM community_art WHERE status = 'approved'"
+    params: list[Any] = []
+    if media in MEDIA_TYPES:
+        query += " AND media_type = ?"
+        params.append(media)
+    rows = conn.execute(query, params).fetchall()
+    if not rows:
+        return {"art": [], "matched_on": "empty", "matched_count": 0}
+
+    wanted = _tokens(text)
+    scored = []
+    for row in rows:
+        rating = _wilson_lower_bound(row["ups"] or 0, row["downs"] or 0)
+        candidate = _tokens(f"{row['description'] or ''} {row['label']}")
+        overlap = wanted & candidate
+        # Normalised by the candidate's vocabulary so a long, rambling
+        # description does not outrank a precise one just by covering more
+        # ground.
+        keyword = len(overlap) / math.sqrt(len(candidate)) if candidate else 0.0
+        scored.append((keyword + RATING_INFLUENCE * rating, keyword, row))
+
+    matched = sorted(
+        (entry for entry in scored if entry[1] > 0), key=lambda e: e[0], reverse=True
+    )
+    rest = sorted(
+        (entry for entry in scored if entry[1] == 0), key=lambda e: e[0], reverse=True
+    )
+
+    # Padded with the best-rated remainder when few pieces share wording with
+    # the post. One suggestion is not a choice, and the point of the shortlist
+    # is that the author picks. The count says how many actually matched, so
+    # the picker can be honest about which part of the row is a match.
+    pool = (matched + rest)[:limit]
+
+    return {
+        "art": [
+            {
+                "id": row["id"],
+                "filename": row["filename"],
+                "label": row["label"],
+                "description": row["description"],
+                "media_type": row["media_type"],
+                "matched": keyword > 0,
+                "score": round(total, 4),
+            }
+            for total, keyword, row in pool
+        ],
+        "matched_on": "context" if matched else "rating",
+        "matched_count": min(len(matched), limit),
+    }
 
 
 def record_art_vote(art_id: int, feedback: str) -> bool:

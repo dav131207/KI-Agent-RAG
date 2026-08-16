@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { ThumbsDown, ThumbsUp } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import EmotePicker from './EmotePicker'
+import CommunityArtPicker from './CommunityArtPicker'
 import remarkGfm from 'remark-gfm'
 import { trackEvent } from '../lib/analytics'
 
@@ -146,6 +147,7 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {msg.emote ? `${textWithLinks.trim()} ![emote](${msg.emote})` : textWithLinks}
               </ReactMarkdown>
+              {msg.artPicker && <CommunityArtPicker text={msg.text} />}
               {isSocialPost && <EmotePicker text={msg.text} />}
             </div>
           )}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Command, Globe, MessageSquare, Hash, ArrowRight, CornerDownLeft, Target } from 'lucide-react'
+import { Command, Globe, MessageSquare, Hash, ArrowRight, CornerDownLeft, Target, Image as ImageIcon } from 'lucide-react'
 
 const LANGUAGES = [
   'English', 'German', 'Spanish', 'French',
@@ -33,11 +33,33 @@ const FORMATS = [
   { id: 'Thread', label: 'Thread', desc: 'Numbered thread, each part under 280 characters' }
 ]
 
+// Where the picture comes from. Community art is matched against the finished
+// post rather than the topic, which is why it offers a shortlist instead of
+// attaching one image blind.
+const VISUALS = [
+  { id: 'Community', label: 'Community art', desc: 'Matched to the finished post, with alternatives to choose from' },
+  { id: 'Rare', label: 'Rare Pepe', desc: 'From the Rare Pepe collection' },
+  { id: 'Random', label: 'Random Pepe', desc: 'A meme picked to fit the post' },
+  { id: 'None', label: 'No image', desc: 'Text only' },
+]
+
+// A post arguing from network data gets the live chart, so that goal offers it
+// as its first option rather than a meme.
+const CHAIN_VISUAL = {
+  id: 'Chain',
+  label: 'On-chain chart',
+  desc: 'Live hashrate and block data, rendered as a card',
+}
+
+function visualsFor(goal) {
+  return goal === 'Data' ? [CHAIN_VISUAL, ...VISUALS] : VISUALS
+}
+
 // Steps are derived, not hardcoded: the format step only exists for Twitter.
 function buildSteps(platform) {
   const steps = ['platform', 'language', 'goal']
   if (platform === 'Twitter') steps.push('format')
-  steps.push('topic')
+  steps.push('visual', 'topic')
   return steps
 }
 
@@ -47,6 +69,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
   const [language, setLanguage] = useState('')
   const [goal, setGoal] = useState('')
   const [format, setFormat] = useState('')
+  const [visual, setVisual] = useState('')
   const [search, setSearch] = useState('')
   const inputRef = useRef(null)
 
@@ -57,6 +80,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
       setLanguage('')
       setGoal('')
       setFormat('')
+      setVisual('')
       setSearch('')
       setTimeout(() => inputRef.current?.focus(), 100)
     }
@@ -73,6 +97,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
     language: LANGUAGES.filter((l) => matches(l)).map((l) => ({ id: l, label: l, desc: '' })),
     goal: GOALS.filter((g) => matches(g.label) || matches(g.desc)),
     format: FORMATS.filter((f) => matches(f.label) || matches(f.desc)),
+    visual: visualsFor(goal).filter((v) => matches(v.label) || matches(v.desc)),
     topic: [],
   }[step]
 
@@ -82,6 +107,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
       language,
       goal,
       format: platform === 'Twitter' ? format || 'Single' : '',
+      visual: visual || (goal === 'Data' ? 'Chain' : 'Random'),
       topic: search,
     })
 
@@ -89,6 +115,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
     if (step === 'platform') setPlatform(id)
     else if (step === 'language') setLanguage(id)
     else if (step === 'format') setFormat(id)
+    else if (step === 'visual') setVisual(id)
     else setGoal(id)
     setStepIndex((i) => i + 1)
     setSearch('')
@@ -127,6 +154,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
     language: 'Search language...',
     goal: 'What should this post achieve?',
     format: 'One post or a thread?',
+    visual: 'Which image should go with it?',
     topic: TOPIC_PROMPTS[goal] || 'What is this post about? (Press Enter to generate)',
   }[step]
 
@@ -137,6 +165,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
     ...(platform === 'Twitter'
       ? [{ key: 'format', icon: <MessageSquare size={12} />, label: 'Format', value: format }]
       : []),
+    { key: 'visual', icon: <ImageIcon size={12} />, label: 'Image', value: visual },
     { key: 'topic', icon: <Hash size={12} />, label: 'Topic', value: '' },
   ]
 

@@ -647,6 +647,48 @@ async def delete_community_art(art_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Art not found")
     return {"status": "deleted"}
 
+def _community_art_url(request: Request, filename: str) -> str:
+    """Public URL for a piece: clips stream directly, stills get the watermark."""
+    if filename.lower().endswith((".mp4", ".webm")):
+        return f"{request.base_url}community/{filename}"
+    return f"{request.base_url}api/watermark?path=/community/{filename}"
+
+
+@router.get("/community-art/suggest")
+async def suggest_community_art(
+    request: Request, text: str = "", limit: int = 4, media: Optional[str] = None
+):
+    """
+    Shortlist community art that fits a generated post.
+
+    A shortlist rather than one automatic pick: art that misses the subject
+    reads worse under a post than no art at all, and only the author can tell.
+    """
+    from services.art_service import (
+        MEDIA_TYPES,
+        record_impression,
+        suggest_art,
+    )
+
+    if media and media not in MEDIA_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown media type. Expected one of: {', '.join(MEDIA_TYPES)}",
+        )
+
+    result = await asyncio.to_thread(suggest_art, text, max(1, min(limit, 12)), media)
+
+    for piece in result["art"]:
+        # Everything on the shortlist is genuinely put in front of the user, so
+        # it counts as shown. The sequence is left alone: several pieces at
+        # once have no meaningful "last shown" among them.
+        record_impression(int(piece["id"]), sequence=False)
+        piece["url"] = _community_art_url(request, str(piece["filename"]))
+        piece.pop("filename", None)
+
+    return result
+
+
 @router.get("/community-art/labels")
 async def get_community_art_labels():
     from services.art_service import get_labels
@@ -671,12 +713,7 @@ async def get_random_community_art(
         raise HTTPException(status_code=404, detail="No art found for this label")
 
     record_impression(int(art["id"]))
-
-    filename = str(art['filename'])
-    if filename.lower().endswith(('.mp4', '.webm')):
-        url = f"{request.base_url}community/{filename}"
-    else:
-        url = f"{request.base_url}api/watermark?path=/community/{filename}"
+    url = _community_art_url(request, str(art["filename"]))
 
     # The id travels with the response so a thumbs rating on the message can be
     # credited back to this piece; without it the rating was recorded against
