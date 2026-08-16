@@ -186,6 +186,20 @@ async def seed_rare_pepe_collection(request: Request, force: bool = False):
     return await asyncio.to_thread(seed_rare_pepes, force)
 
 
+@router.post("/admin/community-art/relabel")
+async def relabel_community_art(request: Request, only_missing: bool = False):
+    """
+    Name every piece in the library from its own picture. Admin only.
+
+    One vision call per piece, so it runs as long as the library is large.
+    `only_missing` limits it to pieces that have no name at all.
+    """
+    check_admin_auth(request.headers.get("Authorization"))
+    from services.art_service import relabel_all
+
+    return await asyncio.to_thread(relabel_all, only_missing)
+
+
 @router.get("/analytics")
 async def analytics_summary(request: Request, days: int = 7):
     """Return an aggregated analytics summary for the last N days."""

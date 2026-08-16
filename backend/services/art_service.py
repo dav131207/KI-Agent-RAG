@@ -239,7 +239,9 @@ member, concrete enough that someone searching for this picture by its subject
 would find it."""
 
 
-def describe_and_label(file_path: Path, mime_type: str) -> tuple[str, str]:
+def describe_and_label(
+    file_path: Path, mime_type: str, known_labels: Optional[list[str]] = None
+) -> tuple[str, str]:
     """
     Ask the model what this picture is and where it belongs.
 
@@ -253,7 +255,7 @@ def describe_and_label(file_path: Path, mime_type: str) -> tuple[str, str]:
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         data, mime_type = _describable_bytes(file_path, mime_type)
-        existing = all_labels()
+        existing = all_labels() if known_labels is None else known_labels
         prompt = _DESCRIBE_PROMPT.format(
             existing="\n".join(f"- {name}" for name in existing) or "- (none yet)"
         )
@@ -344,6 +346,80 @@ def add_art(
         "status": "pending",
         "media_type": media,
     }
+
+def relabel_all(only_missing: bool = False) -> dict:
+    """
+    Name every piece in the library from its own picture.
+
+    Categories were typed by uploaders and came out as "meme", "art", "info"
+    and one empty string — headings that say nothing about what is under them.
+
+    Processed one at a time with the names assigned so far handed back to the
+    model, so the categories converge during the run instead of every picture
+    inventing its own. Blocking; callers run it off the event loop.
+    """
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT id, filename, label, status FROM community_art ORDER BY id"
+    ).fetchall()
+
+    assigned: list[str] = []
+    renamed = 0
+    skipped = 0
+    missing = 0
+    changes: list[dict] = []
+
+    for row in rows:
+        if only_missing and (row["label"] or "").strip():
+            skipped += 1
+            continue
+
+        directory = MEMES_COMMUNITY_DIR if row["status"] == "approved" else UPLOADS_DIR
+        path = directory / row["filename"]
+        if not path.is_file():
+            # The row outlived its file; renaming it would invent a category
+            # for a picture nobody can see.
+            missing += 1
+            continue
+
+        mime = {
+            "gif": "image/gif",
+            "video": "video/mp4",
+        }.get(media_type_for(row["filename"]), "image/jpeg")
+
+        label, description = describe_and_label(path, mime, known_labels=assigned)
+        if not label:
+            skipped += 1
+            continue
+
+        fields = ["label = ?"]
+        params: list[Any] = [label]
+        if description:
+            fields.append("description = ?")
+            params.append(description)
+        params.append(row["id"])
+        conn.execute(
+            f"UPDATE community_art SET {', '.join(fields)} WHERE id = ?", params
+        )
+
+        if label not in assigned:
+            assigned.append(label)
+        renamed += 1
+        changes.append({"id": row["id"], "from": row["label"], "to": label})
+
+    conn.commit()
+    logger.info(
+        "Relabelled %s pieces into %s categories (%s skipped, %s missing files)",
+        renamed, len(assigned), skipped, missing,
+    )
+    return {
+        "renamed": renamed,
+        "skipped": skipped,
+        "missing_files": missing,
+        "categories": sorted(assigned),
+        "changes": changes,
+    }
+
 
 def get_all_art() -> list[dict]:
     conn = _get_conn()
@@ -527,26 +603,30 @@ def get_random_art(
         if (most_recent["shown_seq"] or 0) > 0:
             rows = [r for r in rows if r["id"] != most_recent["id"]]
 
+    # Asking for something is a request, not a hint: the draw is made from the
+    # pieces that match. Weighting them up instead left a 2-in-26 match losing
+    # seven times out of ten, which reads as the word being ignored.
     wanted = _tokens(query or "")
-    weights = []
-    matched_any = False
-    for row in rows:
-        weight = _selection_weight(row)
-        if wanted:
-            candidate = _tokens(f"{row['description'] or ''} {row['label']}")
-            overlap = len(wanted & candidate)
-            if overlap:
-                matched_any = True
-                # Multiplied, not filtered: a request for something the
-                # library does not have still answers with a picture, just
-                # without the boost.
-                weight *= 1 + 4 * overlap
-        weights.append(weight)
+    matching = []
+    if wanted:
+        matching = [
+            row
+            for row in rows
+            if _overlap(wanted, _tokens(f"{row['description'] or ''} {row['label']}"))
+        ]
 
+    # Only when nothing matches does the whole library come back, so a word the
+    # library does not know still answers with a picture rather than an error.
+    pool = matching or rows
+    weights = [_selection_weight(row) for row in pool]
     total = sum(weights)
-    chosen = random.choices(rows, weights=weights, k=1)[0] if total > 0 else random.choice(rows)
+    chosen = random.choices(pool, weights=weights, k=1)[0] if total > 0 else random.choice(pool)
+
     result = dict(chosen)
-    result["matched_query"] = bool(wanted) and matched_any
+    # About the piece being returned, not about the library. The flag used to
+    # say "something in here matched" while handing over something that did
+    # not, which is worse than saying nothing.
+    result["matched_query"] = bool(matching)
     return result
 
 
@@ -591,6 +671,21 @@ der die das und ist sind ein eine einen einem eines dem den des auf aus bei mit
 nach von vor zu zum zur im in ist es sich auch nicht noch nur oder aber wie was
 wer wo wenn dann als am an für über unter durch gegen ohne um sehr mehr
 """.split())
+
+
+def _overlap(wanted: set, candidate: set) -> int:
+    """
+    How many of the asked-for words the candidate carries.
+
+    Matched on prefixes rather than whole words: someone typing "info" means
+    the infographic, and exact equality answered that there was none. Both
+    directions, so "infographics" finds "infographic" too.
+    """
+    hits = 0
+    for word in wanted:
+        if any(other.startswith(word) or word.startswith(other) for other in candidate):
+            hits += 1
+    return hits
 
 
 def _tokens(text: str) -> set:
@@ -639,11 +734,11 @@ def suggest_art(text: str, limit: int = 4, media: Optional[str] = None) -> dict:
     for row in rows:
         rating = _wilson_lower_bound(row["ups"] or 0, row["downs"] or 0)
         candidate = _tokens(f"{row['description'] or ''} {row['label']}")
-        overlap = wanted & candidate
         # Normalised by the candidate's vocabulary so a long, rambling
         # description does not outrank a precise one just by covering more
         # ground.
-        keyword = len(overlap) / math.sqrt(len(candidate)) if candidate else 0.0
+        overlap = _overlap(wanted, candidate)
+        keyword = overlap / math.sqrt(len(candidate)) if candidate else 0.0
         scored.append((keyword + RATING_INFLUENCE * rating, keyword, row))
 
     matched = sorted(
