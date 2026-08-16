@@ -44,13 +44,16 @@ from services.crypto_service import get_pepe_chain_data
 from services.emote_service import emote_files, export_emote, pick_emote, suggest_emotes
 from services.image_service import (
     ALLOWED_IMAGE_PREFIXES,
-    watermark_image_bytes,
+    EXTERNAL_IMAGE_TIMEOUT,
     build_watermarked_url,
+    cache_key_for_source,
     extract_image_search_term,
     fetch_onlypepes_candidates,
     fetch_onlypepes_image,
     get_watermark,
+    read_cached,
     validate_memes_path,
+    watermark_image_bytes,
 )
 from services.language_service import (
     detect_language_from_request,
@@ -556,22 +559,41 @@ async def watermark_proxy(url: Optional[str] = None, path: Optional[str] = None)
     if url:
         if not any(url.startswith(p) for p in ALLOWED_IMAGE_PREFIXES):
             raise HTTPException(status_code=400, detail="Image URL not allowed")
-        try:
-            r = await http.get(url)
-            r.raise_for_status()
-            data = r.content
-        except httpx.HTTPError as e:
-            raise HTTPException(status_code=502, detail=f"Image fetch error: {e}")
+        cache_key = cache_key_for_source(url)
     else:
         file_path = validate_memes_path(path)
         if not file_path.is_file():
             raise HTTPException(status_code=404, detail="Image not found")
+        cache_key = cache_key_for_source(f"{file_path}:{file_path.stat().st_mtime_ns}")
+
+    # Consulted before fetching, not after. The rare pepe collection is served
+    # by archive.org extracting each file from a 183 MB zip on demand, which is
+    # slow when it works and unreachable when it does not; a picture that
+    # loaded once should never depend on that host again.
+    cached = read_cached(cache_key)
+    if cached:
+        return StreamingResponse(BytesIO(cached[0]), media_type=cached[1])
+
+    if url:
+        try:
+            r = await http.get(url, timeout=EXTERNAL_IMAGE_TIMEOUT)
+            r.raise_for_status()
+            data = r.content
+        except httpx.HTTPError as e:
+            # Timeouts stringify to nothing, which made the log and the client
+            # response say only "Image fetch error:" with no cause.
+            reason = str(e) or type(e).__name__
+            logger.warning("Image fetch failed for %s: %s", url, reason)
+            raise HTTPException(status_code=502, detail=f"Image fetch error: {reason}")
+    else:
         data = file_path.read_bytes()
 
     try:
         # Per-frame watermarking of an animation is CPU-bound; on the event
         # loop it would stall every other request for its duration.
-        result, media_type = await asyncio.to_thread(watermark_image_bytes, data)
+        result, media_type = await asyncio.to_thread(
+            watermark_image_bytes, data, cache_key
+        )
         return StreamingResponse(BytesIO(result), media_type=media_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Watermark error: {e}")

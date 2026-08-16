@@ -74,11 +74,53 @@ _WATERMARK_CACHE_DIR = DATA_DIR / "cache" / "watermark"
 MAX_CACHE_BYTES = int(os.getenv("WATERMARK_CACHE_MB", "150")) * 1024 * 1024
 
 
+# Fetching a source image is not allowed to take as long as the shared client
+# permits. The rare pepe collection lives inside a zip on archive.org, which
+# extracts each file on demand and can stall for minutes; a viewer staring at a
+# spinner for a minute is worse served than one told quickly that it failed.
+EXTERNAL_IMAGE_TIMEOUT = float(os.getenv("EXTERNAL_IMAGE_TIMEOUT", "8"))
+
+
 def _cache_paths(digest: str) -> tuple[Path, Path]:
     return (
         _WATERMARK_CACHE_DIR / f"{digest}.bin",
         _WATERMARK_CACHE_DIR / f"{digest}.type",
     )
+
+
+def cache_key_for_source(source: str) -> str:
+    """
+    Cache key for a picture, derived from where it comes from.
+
+    Keying on the response bytes meant the source had to be fetched before the
+    cache could be consulted, which is worthless when fetching is the slow and
+    failing part. Keyed on the source instead, a picture that loaded once never
+    touches the remote host again.
+    """
+    return hashlib.blake2b(source.encode("utf-8"), digest_size=16).hexdigest()
+
+
+def read_cached(key: str) -> Optional[tuple[bytes, str]]:
+    """Return a previously rendered image, or None."""
+    blob_path, type_path = _cache_paths(key)
+    try:
+        if blob_path.is_file() and type_path.is_file():
+            return blob_path.read_bytes(), type_path.read_text().strip()
+    except OSError:
+        pass  # an unreadable cache is a miss, not a failure
+    return None
+
+
+def write_cached(key: str, data: bytes, media_type: str) -> None:
+    """Store a rendered image under a source key."""
+    blob_path, type_path = _cache_paths(key)
+    try:
+        _WATERMARK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        blob_path.write_bytes(data)
+        type_path.write_text(media_type)
+        _prune_cache()
+    except OSError:
+        pass  # serving the image matters more than caching it
 
 
 def _prune_cache() -> None:
@@ -137,7 +179,9 @@ def _render_watermarked(data: bytes) -> tuple[bytes, str]:
     return buf.getvalue(), "image/gif"
 
 
-def watermark_image_bytes(data: bytes) -> tuple[bytes, str]:
+def watermark_image_bytes(
+    data: bytes, cache_key: Optional[str] = None
+) -> tuple[bytes, str]:
     """
     Watermark encoded image data, returning (bytes, media type).
 
@@ -145,29 +189,19 @@ def watermark_image_bytes(data: bytes) -> tuple[bytes, str]:
     back as a PNG, so an uploaded GIF reached the user as a still image. Every
     frame is watermarked now and the animation is written back with save_all.
 
-    Results are cached on disk by content hash: identical input always produces
-    identical output, and re-running the per-frame pass on every view of the
-    same GIF is pure waste.
+    Results are cached on disk: identical input always produces identical
+    output, and re-running the per-frame pass on every view of the same GIF is
+    pure waste. `cache_key` should identify the source when the caller knows
+    it, so the cache can be consulted before the source is fetched.
     """
-    digest = hashlib.blake2b(data, digest_size=16).hexdigest()
-    blob_path, type_path = _cache_paths(digest)
+    key = cache_key or hashlib.blake2b(data, digest_size=16).hexdigest()
 
-    try:
-        if blob_path.is_file() and type_path.is_file():
-            return blob_path.read_bytes(), type_path.read_text().strip()
-    except OSError:
-        pass  # an unreadable cache is a miss, not a failure
+    cached = read_cached(key)
+    if cached:
+        return cached
 
     result, media_type = _render_watermarked(data)
-
-    try:
-        _WATERMARK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        blob_path.write_bytes(result)
-        type_path.write_text(media_type)
-        _prune_cache()
-    except OSError:
-        pass  # serving the image matters more than caching it
-
+    write_cached(key, result, media_type)
     return result, media_type
 
 

@@ -60,6 +60,7 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
   const isUser = msg.role === 'user'
   const [feedback, setFeedback] = useState(null)
   const [askReason, setAskReason] = useState(false)
+  const [imageFailed, setImageFailed] = useState(false)
 
   const sendFeedback = (type, reason) => {
     const metadata = {}
@@ -134,14 +135,24 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
               className="mb-2 sm:mb-3 rounded-xl max-w-full max-h-48 sm:max-h-56 md:max-h-64 h-auto w-auto mx-auto shadow-sm"
             />
           ) : msg.image && (
-            <motion.img
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4 }}
-              src={msg.image}
-              alt="Generated visual"
-              className="mb-2 sm:mb-3 rounded-xl max-w-full max-h-48 sm:max-h-56 md:max-h-64 h-auto w-auto mx-auto shadow-sm"
-            />
+            /* Some pictures come from hosts outside this project. When one is
+               unreachable the browser leaves a broken-image icon and nothing
+               explains it, so say so instead. */
+            imageFailed ? (
+              <p className="mb-2 sm:mb-3 text-center text-[11px] text-brand-500 dark:text-brand-400 italic">
+                The image could not be loaded — its host is not responding.
+              </p>
+            ) : (
+              <motion.img
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.4 }}
+                src={msg.image}
+                alt="Generated visual"
+                onError={() => setImageFailed(true)}
+                className="mb-2 sm:mb-3 rounded-xl max-w-full max-h-48 sm:max-h-56 md:max-h-64 h-auto w-auto mx-auto shadow-sm"
+              />
+            )
           )}
           {msg.text && (
             <div className="prose prose-sm dark:prose-invert max-w-none break-words [overflow-wrap:anywhere]">
