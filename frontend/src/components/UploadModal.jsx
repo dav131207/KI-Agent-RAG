@@ -1,85 +1,98 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, X, CheckCircle, Loader2 } from 'lucide-react'
+import { Upload, X, CheckCircle, Loader2, Copy, AlertCircle, Trash2 } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
+const MAX_FILES = 15
+const MAX_BYTES = 25 * 1024 * 1024
+const ACCEPTED = 'image/png,image/jpeg,image/gif,video/mp4,video/webm'
+
 export default function UploadModal({ isOpen, onClose, isDark }) {
-  const [file, setFile] = useState(null)
-  const [preview, setPreview] = useState(null)
+  const [files, setFiles] = useState([])
   const [label, setLabel] = useState('')
   const [loading, setLoading] = useState(false)
-  const [success, setSuccess] = useState(false)
+  const [results, setResults] = useState(null)
   const [error, setError] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const inputRef = useRef(null)
 
   useEffect(() => {
     if (isOpen) {
-      setFile(null)
-      setPreview(null)
+      setFiles([])
       setLabel('')
       setLoading(false)
-      setSuccess(false)
+      setResults(null)
       setError('')
       setIsDragging(false)
     }
   }, [isOpen])
 
-  const processFile = (selected) => {
-    if (selected.size > 25 * 1024 * 1024) {
-      setError('File is too large (max 25MB)')
-      return
+  // Object URLs are revoked when the entry goes away, or every preview would
+  // hold its file in memory for as long as the tab lives.
+  useEffect(() => {
+    return () => files.forEach((entry) => URL.revokeObjectURL(entry.preview))
+  }, [files])
+
+  const addFiles = (selected) => {
+    const incoming = Array.from(selected || [])
+    if (!incoming.length) return
+
+    const problems = []
+    const accepted = []
+
+    for (const file of incoming) {
+      if (file.size > MAX_BYTES) {
+        problems.push(`${file.name} is larger than 25MB`)
+        continue
+      }
+      // Catches the same file picked twice in one go. Identical content under
+      // two names is caught by the server, which compares the bytes.
+      const known = (entry) =>
+        entry.file.name === file.name && entry.file.size === file.size
+      if (files.some(known) || accepted.some(known)) continue
+      accepted.push({ file, preview: URL.createObjectURL(file) })
     }
-    setFile(selected)
-    setError('')
-    const objectUrl = URL.createObjectURL(selected)
-    setPreview(objectUrl)
+
+    const room = MAX_FILES - files.length
+    if (accepted.length > room) {
+      problems.push(`Only ${MAX_FILES} files at a time — the rest were skipped`)
+    }
+
+    setFiles((prev) => [...prev, ...accepted.slice(0, Math.max(0, room))])
+    setError(problems.join('. '))
   }
 
-  const handleDragOver = (e) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }
-
-  const handleDragLeave = (e) => {
-    e.preventDefault()
-    setIsDragging(false)
+  const removeFile = (index) => {
+    setFiles((prev) => {
+      URL.revokeObjectURL(prev[index].preview)
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   const handleDrop = (e) => {
     e.preventDefault()
     setIsDragging(false)
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0])
-    }
-  }
-
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0])
-    }
+    addFiles(e.dataTransfer.files)
   }
 
   const handleUpload = async () => {
-    if (!file || !label.trim()) return
+    if (!files.length || !label.trim()) return
     setLoading(true)
     setError('')
 
     const formData = new FormData()
-    formData.append('file', file)
     formData.append('label', label.trim())
+    files.forEach((entry) => formData.append('files', entry.file))
 
     try {
       const res = await fetch(`${API_BASE}/api/community-art/upload`, {
         method: 'POST',
         body: formData,
       })
-      if (!res.ok) throw new Error('Upload failed')
-      setSuccess(true)
-      setTimeout(() => {
-        onClose()
-      }, 2500)
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.detail || 'Upload failed')
+      setResults(data)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -88,6 +101,12 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
   }
 
   if (!isOpen) return null
+
+  const STATUS_STYLE = {
+    added: { icon: CheckCircle, className: 'text-accent', word: 'Added' },
+    duplicate: { icon: Copy, className: 'text-amber-500', word: 'Already there' },
+    rejected: { icon: AlertCircle, className: 'text-red-500', word: 'Rejected' },
+  }
 
   return (
     <AnimatePresence>
@@ -118,50 +137,109 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
           </div>
 
           <div className="p-6 space-y-6">
-            {success ? (
-              <div className="text-center py-8 space-y-4">
-                <CheckCircle size={48} className="text-accent mx-auto" />
-                <h4 className="font-bold text-xl">Upload Successful!</h4>
-                <p className="opacity-70 text-sm">
-                  Dein Content wurde eingereicht und wartet auf Freigabe durch einen Administrator.
-                </p>
+            {results ? (
+              <div className="space-y-4">
+                <div className="text-center space-y-1">
+                  <CheckCircle size={40} className="text-accent mx-auto" />
+                  <h4 className="font-bold text-lg">
+                    {results.added} of {results.results.length} added
+                  </h4>
+                  <p className="opacity-70 text-sm">
+                    {results.added > 0
+                      ? 'Submitted and waiting for an administrator to approve them.'
+                      : 'Nothing new was added.'}
+                  </p>
+                </div>
+
+                {/* Per file, because a batch that silently drops half of it
+                    leaves you guessing which half. */}
+                <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                  {results.results.map((entry, index) => {
+                    const style = STATUS_STYLE[entry.status] || STATUS_STYLE.rejected
+                    const Icon = style.icon
+                    return (
+                      <div key={index} className="flex items-start gap-2 text-xs">
+                        <Icon size={14} className={`${style.className} shrink-0 mt-0.5`} />
+                        <span className="truncate flex-1" title={entry.filename}>
+                          {entry.filename}
+                        </span>
+                        <span className={`${style.className} shrink-0 font-medium`}>
+                          {style.word}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <button
+                  onClick={onClose}
+                  className="w-full py-2.5 rounded-lg bg-accent text-white font-bold shadow-lg shadow-accent/20"
+                >
+                  Done
+                </button>
               </div>
             ) : (
               <>
-                <div 
+                <div
                   onClick={() => inputRef.current?.click()}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+                  onDragLeave={(e) => { e.preventDefault(); setIsDragging(false) }}
                   onDrop={handleDrop}
-                  className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
-                    isDragging 
+                  className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                    isDragging
                       ? 'border-accent bg-accent/10'
-                      : isDark 
-                        ? 'border-white/20 hover:border-accent hover:bg-white/5' 
+                      : isDark
+                        ? 'border-white/20 hover:border-accent hover:bg-white/5'
                         : 'border-brand-300 hover:border-accent hover:bg-brand-50'
                   }`}
                 >
-                  <input 
-                    type="file" 
-                    ref={inputRef} 
-                    onChange={handleFileChange} 
-                    accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" 
-                    className="hidden" 
+                  <input
+                    type="file"
+                    ref={inputRef}
+                    multiple
+                    onChange={(e) => { addFiles(e.target.files); e.target.value = '' }}
+                    accept={ACCEPTED}
+                    className="hidden"
                   />
-                  {preview ? (
-                    file.type.startsWith('video/') ? (
-                      <video src={preview} className="max-h-48 mx-auto rounded" controls />
-                    ) : (
-                      <img src={preview} alt="Preview" className="max-h-48 mx-auto rounded object-contain" />
-                    )
-                  ) : (
-                    <div className="space-y-2 opacity-60">
-                      <Upload size={32} className="mx-auto" />
-                      <p className="text-sm font-medium">Click to select image or video</p>
-                      <p className="text-xs">Max 25MB</p>
-                    </div>
-                  )}
+                  <div className="space-y-2 opacity-60">
+                    <Upload size={28} className="mx-auto" />
+                    <p className="text-sm font-medium">
+                      {files.length
+                        ? `${files.length} of ${MAX_FILES} selected — click to add more`
+                        : 'Click or drop files — up to 15 at once'}
+                    </p>
+                    <p className="text-xs">Max 25MB each</p>
+                  </div>
                 </div>
+
+                {files.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {files.map((entry, index) => (
+                      <div key={index} className="relative group aspect-square">
+                        {entry.file.type.startsWith('video/') ? (
+                          <div className="w-full h-full rounded-lg bg-black/20 flex items-center justify-center text-[9px] font-semibold opacity-70">
+                            VIDEO
+                          </div>
+                        ) : (
+                          <img
+                            src={entry.preview}
+                            alt={entry.file.name}
+                            title={entry.file.name}
+                            className="w-full h-full object-cover rounded-lg"
+                          />
+                        )}
+                        <button
+                          onClick={() => removeFile(index)}
+                          disabled={loading}
+                          aria-label={`Remove ${entry.file.name}`}
+                          className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-red-500 text-white opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <label className="text-sm font-semibold opacity-80">Category / Label</label>
@@ -170,21 +248,33 @@ export default function UploadModal({ isOpen, onClose, isDark }) {
                     onChange={(e) => setLabel(e.target.value)}
                     placeholder="e.g. Infographic, Pep Meme GM, Comparison"
                     className={`w-full px-4 py-2 rounded-lg border outline-none focus:border-accent ${
-                      isDark 
-                        ? 'bg-black/20 border-white/10 placeholder:text-white/30' 
+                      isDark
+                        ? 'bg-black/20 border-white/10 placeholder:text-white/30'
                         : 'bg-brand-50 border-brand-200 placeholder:text-brand-400'
                     }`}
                   />
+                  {files.length > 1 && (
+                    <p className="text-xs opacity-60">
+                      Applies to all {files.length} files.
+                    </p>
+                  )}
                 </div>
 
                 {error && <p className="text-red-500 text-sm font-medium text-center">{error}</p>}
 
                 <button
                   onClick={handleUpload}
-                  disabled={!file || !label.trim() || loading}
+                  disabled={!files.length || !label.trim() || loading}
                   className="w-full py-3 rounded-lg bg-accent text-white font-bold disabled:opacity-50 transition-opacity flex items-center justify-center gap-2 shadow-lg shadow-accent/20"
                 >
-                  {loading ? <Loader2 size={18} className="animate-spin" /> : 'Upload'}
+                  {loading ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      Uploading {files.length}...
+                    </>
+                  ) : (
+                    `Upload${files.length > 1 ? ` ${files.length} files` : ''}`
+                  )}
                 </button>
               </>
             )}

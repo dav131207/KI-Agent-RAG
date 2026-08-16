@@ -11,6 +11,22 @@
     @apply antialiased transition-colors duration-300;
   }
 
+  /* iOS Safari zooms the whole page in when a focused field's text is under
+     16px, and nothing zooms it back out afterwards. Every field is at least
+     16px on phones for that reason; above that width the behaviour does not
+     exist and the designed sizes apply again.
+
+     !important because a utility class beats an element selector whatever the
+     order, so text-sm on any one field would quietly bring the trap back — and
+     this has to hold for fields nobody remembered to check. */
+  @media (max-width: 639px) {
+    input:not([type='checkbox']):not([type='radio']),
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
   ::selection {
     @apply bg-accent/30 text-brand-900 dark:text-brand-50;
   }

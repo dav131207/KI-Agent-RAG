@@ -1,5 +1,6 @@
 """Community Art service for Professor Pepe."""
 
+import hashlib
 import math
 import random
 import shutil
@@ -78,6 +79,10 @@ _RATING_COLUMNS = {
     # Lets the picker offer stills and animations separately. Stored rather
     # than derived per query so filtering is a plain WHERE.
     "media_type": "TEXT NOT NULL DEFAULT 'image'",
+    # Content hash, so the same picture uploaded twice is recognised whatever
+    # it was named. Not UNIQUE: rows that predate the column share an empty
+    # value, and a unique index would refuse to be created over them.
+    "content_hash": "TEXT NOT NULL DEFAULT ''",
 }
 
 MEDIA_TYPES = ("image", "gif", "video")
@@ -87,6 +92,33 @@ _EXTENSION_MEDIA = {
     ".mp4": "video",
     ".webm": "video",
 }
+
+
+def hash_file(path: Path) -> str:
+    """Content hash of a file, or an empty string if it cannot be read."""
+    try:
+        digest = hashlib.blake2b(digest_size=16)
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return ""
+
+
+def hash_bytes(data: bytes) -> str:
+    """Content hash of data already in memory."""
+    return hashlib.blake2b(data, digest_size=16).hexdigest()
+
+
+def find_by_hash(content_hash: str) -> Optional[dict]:
+    """The piece already holding this exact content, if any."""
+    if not content_hash:
+        return None
+    row = _get_conn().execute(
+        "SELECT * FROM community_art WHERE content_hash = ? LIMIT 1", (content_hash,)
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def media_type_for(filename: str) -> str:
@@ -114,6 +146,23 @@ def init_db() -> None:
         if column not in existing:
             conn.execute(f"ALTER TABLE community_art ADD COLUMN {column} {definition}")
             added.add(column)
+
+    if "content_hash" in added:
+        # Existing files are hashed once so art uploaded before the column
+        # existed still takes part in duplicate detection.
+        for row in conn.execute("SELECT id, filename, status FROM community_art"):
+            directory = (
+                MEMES_COMMUNITY_DIR if row["status"] == "approved" else UPLOADS_DIR
+            )
+            digest = hash_file(directory / row["filename"])
+            if digest:
+                conn.execute(
+                    "UPDATE community_art SET content_hash = ? WHERE id = ?",
+                    (digest, row["id"]),
+                )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_art_hash ON community_art(content_hash)"
+        )
 
     if "media_type" in added:
         # Rows that predate the column all carry the 'image' default, which is
@@ -179,15 +228,22 @@ def generate_description(file_path: Path, mime_type: str) -> str:
     except Exception as e:
         return f"Failed to generate description: {e}"
 
-def add_art(filename: str, label: str, file_path: Path, mime_type: str) -> dict:
+def add_art(
+    filename: str,
+    label: str,
+    file_path: Path,
+    mime_type: str,
+    content_hash: str = "",
+) -> dict:
     description = generate_description(file_path, mime_type)
     conn = _get_conn()
     cur = conn.cursor()
     media = media_type_for(filename)
     cur.execute(
-        "INSERT INTO community_art (filename, label, description, status, created_at, media_type)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
-        (filename, label, description, "pending", int(time.time()), media)
+        "INSERT INTO community_art (filename, label, description, status, created_at,"
+        " media_type, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (filename, label, description, "pending", int(time.time()), media,
+         content_hash or hash_file(file_path))
     )
     conn.commit()
     return {

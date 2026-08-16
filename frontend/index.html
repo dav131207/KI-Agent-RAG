@@ -5,7 +5,11 @@
     <link rel="icon" type="image/png" href="/logo.png?v=2" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#0a0a0a" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- maximum-scale=1 and user-scalable=no used to be here. They do not stop
+         a pinch or the zoom iOS performs by itself on a small input, they only
+         stop the reader getting back out of it — the page stayed magnified
+         until it was reloaded. Blocking zoom also fails WCAG 1.4.4. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Professor Pepe</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

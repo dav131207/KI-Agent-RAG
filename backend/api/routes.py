@@ -1,6 +1,7 @@
 """API routes for Professor Pepe."""
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -669,38 +670,111 @@ import shutil
 import uuid
 from api.schemas import ArtUpdateRequest
 
-@router.post("/community-art/upload")
-async def upload_community_art(label: str = Form(...), file: UploadFile = File(...)):
-    """Upload community art, get description via Gemini, and store pending."""
-    from services.art_service import add_art, UPLOADS_DIR
-    
-    ext = Path(file.filename or "").suffix.lower()
-    if ext not in {".png", ".jpg", ".jpeg", ".gif", ".mp4", ".webm"}:
-        raise HTTPException(status_code=400, detail="Unsupported file format")
-    
+# One batch at a time, so a single request cannot queue an unbounded number of
+# Gemini vision calls or fill the volume.
+MAX_UPLOAD_FILES = int(os.getenv("MAX_UPLOAD_FILES", "15"))
+
+ALLOWED_UPLOAD_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".mp4", ".webm"}
+
+
+async def _store_one(upload: UploadFile, label: str) -> dict:
+    """
+    Save one uploaded file and register it, or say why it was not.
+
+    Never raises: a batch reports per file, so one bad member does not discard
+    the ones that were fine.
+    """
+    from services.art_service import UPLOADS_DIR, add_art, find_by_hash
+
+    name = upload.filename or "unnamed"
+    ext = Path(name).suffix.lower()
+    if ext not in ALLOWED_UPLOAD_SUFFIXES:
+        return {"filename": name, "status": "rejected", "reason": "Unsupported format"}
+
     new_filename = f"{uuid.uuid4().hex}{ext}"
     file_path = UPLOADS_DIR / new_filename
 
-    # Copied without a bound before, so one request could fill the volume — and
-    # every upload costs a Gemini vision call. Written in chunks against a cap,
-    # discarding the partial file if the cap is passed.
+    # Written in chunks against a cap, discarding the partial file if it is
+    # passed: copying without a bound let one request fill the volume.
     written = 0
+    digest = hashlib.blake2b(digest_size=16)
     try:
         with open(file_path, "wb") as buffer:
-            while chunk := await file.read(1024 * 1024):
+            while chunk := await upload.read(1024 * 1024):
                 written += len(chunk)
                 if written > MAX_UPLOAD_BYTES:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"File exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+                    raise ValueError(
+                        f"Exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
                     )
+                digest.update(chunk)
                 buffer.write(chunk)
-    except Exception:
+    except Exception as e:
         file_path.unlink(missing_ok=True)
-        raise
+        return {"filename": name, "status": "rejected", "reason": str(e) or "Write failed"}
 
-    art = add_art(new_filename, label, file_path, file.content_type or "image/png")
-    return {"status": "success", "art": art}
+    if not written:
+        file_path.unlink(missing_ok=True)
+        return {"filename": name, "status": "rejected", "reason": "Empty file"}
+
+    # Checked before the description is generated: a duplicate costs neither a
+    # vision call nor a second copy on the volume.
+    content_hash = digest.hexdigest()
+    existing = find_by_hash(content_hash)
+    if existing:
+        file_path.unlink(missing_ok=True)
+        return {
+            "filename": name,
+            "status": "duplicate",
+            "reason": f"Already in the library under \"{existing['label']}\"",
+            "existing_id": existing["id"],
+        }
+
+    art = await asyncio.to_thread(
+        add_art, new_filename, label, file_path,
+        upload.content_type or "image/png", content_hash,
+    )
+    return {"filename": name, "status": "added", "art": art}
+
+
+@router.post("/community-art/upload")
+async def upload_community_art(
+    label: str = Form(...),
+    files: list[UploadFile] = File(default=[]),
+    file: UploadFile = File(default=None),
+):
+    """
+    Upload community art. Accepts a batch; each file is reported separately.
+
+    A picture already in the library is recognised by its content rather than
+    its name, so re-uploading one costs nothing and does not create a second
+    entry for the same image.
+    """
+    # `file` is the single-upload field the earlier version used; accepted so
+    # an older client, or a cached bundle, keeps working.
+    batch = [f for f in ([*files, file] if file else list(files)) if f is not None]
+    if not batch:
+        raise HTTPException(status_code=400, detail="No files provided")
+    if len(batch) > MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {MAX_UPLOAD_FILES} files per upload",
+        )
+
+    results = []
+    for upload in batch:
+        results.append(await _store_one(upload, label))
+
+    added = [r for r in results if r["status"] == "added"]
+    return {
+        "status": "success" if added else "none_added",
+        "results": results,
+        "added": len(added),
+        "duplicates": sum(1 for r in results if r["status"] == "duplicate"),
+        "rejected": sum(1 for r in results if r["status"] == "rejected"),
+        # The old shape carried a single `art`; kept for the single-file case.
+        "art": added[0]["art"] if len(added) == 1 else None,
+    }
+
 
 @router.get("/admin/community-art")
 async def get_all_community_art(request: Request):
