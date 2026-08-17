@@ -33,6 +33,8 @@ export default function Chat({ isDark }) {
   const [isArtModalOpen, setIsArtModalOpen] = useState(false)
   const [showSwipeHint, setShowSwipeHint] = useState(true)
   const bottomRef = useRef(null)
+  const scrollContainerRef = useRef(null)
+  const messageContentRef = useRef(null)
 
   // Headline metric for the on-chain card. Matches the post's topic when it
   // names one, otherwise rotates so consecutive posts don't look identical.
@@ -168,6 +170,30 @@ export default function Chat({ isDark }) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, typingText])
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    const content = messageContentRef.current
+    if (!container || !content) return
+
+    /*
+     * The community-art, Pepe and emote pickers fetch their pictures after
+     * the message that hosts them has already settled, so the growth in
+     * height happens well after the [messages, typingText] effect above has
+     * run. Chrome sometimes never repaints the newly revealed area in that
+     * case — the picture is really there (right src, right size, opacity 1)
+     * but the screen keeps showing whatever was painted before, until a
+     * scroll or resize forces a repaint. A net-zero scrollTop nudge forces
+     * that repaint without moving the visible scroll position.
+     */
+    const observer = new ResizeObserver(() => {
+      const top = container.scrollTop
+      container.scrollTop = top + 1
+      container.scrollTop = top
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
 
   const handleSubmit = async (e, command = null) => {
     if (e && e.preventDefault) e.preventDefault()
@@ -422,67 +448,72 @@ export default function Chat({ isDark }) {
   return (
     <div className="flex flex-col h-full relative">
       {/* messages */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-3 sm:px-4 md:px-8 py-4 sm:py-6 pb-64 space-y-4 sm:space-y-6">
-        <AnimatePresence initial={false}>
-          {messages.map((msg, idx) => {
-            const precedingUserMessage =
-              msg.role === 'assistant'
-                ? [...messages.slice(0, idx)].reverse().find((m) => m.role === 'user')?.text
-                : null
-            return (
-              <div key={idx} onClick={(e) => {
-                // Any <img> in a message opens the viewer, which also caught
-                // the thumbnails inside the pickers: choosing one threw the
-                // lightbox open on top of the preview it had just changed.
-                // Picker UI opts out with data-lightbox-ignore.
-                if (e.target.tagName !== 'IMG') return
-                if (e.target.closest('[data-lightbox-ignore]')) return
-                setModalImage(e.target.src)
-              }}>
-                <Message msg={msg} isDark={isDark} userMessage={precedingUserMessage} ragChunks={msg.ragChunks} ragChunkIds={msg.ragChunkIds} isSocialPost={msg.isSocialPost} />
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto scrollbar-thin px-3 sm:px-4 md:px-8 py-4 sm:py-6 pb-64"
+      >
+        <div ref={messageContentRef} className="space-y-4 sm:space-y-6">
+          <AnimatePresence initial={false}>
+            {messages.map((msg, idx) => {
+              const precedingUserMessage =
+                msg.role === 'assistant'
+                  ? [...messages.slice(0, idx)].reverse().find((m) => m.role === 'user')?.text
+                  : null
+              return (
+                <div key={idx} onClick={(e) => {
+                  // Any <img> in a message opens the viewer, which also caught
+                  // the thumbnails inside the pickers: choosing one threw the
+                  // lightbox open on top of the preview it had just changed.
+                  // Picker UI opts out with data-lightbox-ignore.
+                  if (e.target.tagName !== 'IMG') return
+                  if (e.target.closest('[data-lightbox-ignore]')) return
+                  setModalImage(e.target.src)
+                }}>
+                  <Message msg={msg} isDark={isDark} userMessage={precedingUserMessage} ragChunks={msg.ragChunks} ragChunkIds={msg.ragChunkIds} isSocialPost={msg.isSocialPost} />
+                </div>
+              )
+            })}
+          </AnimatePresence>
+
+          {typingText && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex gap-2 sm:gap-4"
+            >
+              <img
+                src="/agent.png"
+                alt="Professor Pepe"
+                className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-xl object-cover shadow-sm"
+              />
+              <div className={`message-bubble-agent px-3 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3.5 max-w-[88%] sm:max-w-[85%] md:max-w-[80%]`}>
+                <p className="whitespace-pre-wrap text-sm sm:text-base">{typingText}</p>
+                <span className="inline-block mt-2 w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
               </div>
-            )
-          })}
-        </AnimatePresence>
+            </motion.div>
+          )}
 
-        {typingText && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex gap-2 sm:gap-4"
-          >
-            <img
-              src="/agent.png"
-              alt="Professor Pepe"
-              className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-xl object-cover shadow-sm"
-            />
-            <div className={`message-bubble-agent px-3 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3.5 max-w-[88%] sm:max-w-[85%] md:max-w-[80%]`}>
-              <p className="whitespace-pre-wrap text-sm sm:text-base">{typingText}</p>
-              <span className="inline-block mt-2 w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-            </div>
-          </motion.div>
-        )}
+          {loading && !typingText && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex gap-2 sm:gap-4"
+            >
+              <img
+                src="/agent.png"
+                alt="Professor Pepe"
+                className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-xl object-cover shadow-sm"
+              />
+              <div className={`px-3 py-2 sm:px-4 sm:py-3 md:px-5 md:py-4 rounded-2xl rounded-tl-sm ${isDark ? 'bg-brand-800/80' : 'bg-white'} border border-brand-100 dark:border-white/10 flex items-center gap-2`}>
+                <span className="typing-dot" style={{ animationDelay: '0ms' }} />
+                <span className="typing-dot" style={{ animationDelay: '150ms' }} />
+                <span className="typing-dot" style={{ animationDelay: '300ms' }} />
+              </div>
+            </motion.div>
+          )}
 
-        {loading && !typingText && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex gap-2 sm:gap-4"
-          >
-            <img
-              src="/agent.png"
-              alt="Professor Pepe"
-              className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-xl object-cover shadow-sm"
-            />
-            <div className={`px-3 py-2 sm:px-4 sm:py-3 md:px-5 md:py-4 rounded-2xl rounded-tl-sm ${isDark ? 'bg-brand-800/80' : 'bg-white'} border border-brand-100 dark:border-white/10 flex items-center gap-2`}>
-              <span className="typing-dot" style={{ animationDelay: '0ms' }} />
-              <span className="typing-dot" style={{ animationDelay: '150ms' }} />
-              <span className="typing-dot" style={{ animationDelay: '300ms' }} />
-            </div>
-          </motion.div>
-        )}
-
-        <div ref={bottomRef} className="h-32 md:h-48 shrink-0" />
+          <div ref={bottomRef} className="h-32 md:h-48 shrink-0" />
+        </div>
       </div>
 
       {/* input area */}
