@@ -674,7 +674,9 @@ async def ingest_file_endpoint(request: Request, file: UploadFile = File(...)):
 
     content = await file.read()
     text = content.decode("utf-8", errors="ignore")
-    count = ingest_text(text, source=file.filename)
+    # A file is a versioned unit: re-uploading it after an edit must replace
+    # its old chunks, not sit next to them.
+    count = ingest_text(text, source=file.filename, replace_source=True)
     if count == 0:
         raise HTTPException(status_code=503, detail="Qdrant not configured")
     return {"ingested_chunks": count, "filename": file.filename}

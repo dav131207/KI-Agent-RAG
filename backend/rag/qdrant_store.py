@@ -21,6 +21,7 @@ from qdrant_client.http.models import (
     Distance,
     FieldCondition,
     Filter,
+    FilterSelector,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
@@ -226,8 +227,20 @@ def _point_id(text: str, source: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{source}:{text}"))
 
 
-def ingest_text(text: str, source: str = "manual", chunk_size: int = 500, chunk_overlap: int = 50) -> int:
-    """Split text into semantic chunks, embed them and store in Qdrant."""
+def ingest_text(
+    text: str,
+    source: str = "manual",
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+    replace_source: bool = False,
+) -> int:
+    """Split text into semantic chunks, embed them and store in Qdrant.
+
+    Point ids derive from chunk text and source, so an unchanged chunk
+    overwrites itself — but an edited one gets a new id and the old chunk
+    stays retrievable. `replace_source` drops every point of this source
+    first, which is what re-ingesting a versioned file needs.
+    """
     client = get_qdrant_client()
     if not client or not ensure_collection():
         return 0
@@ -239,6 +252,14 @@ def ingest_text(text: str, source: str = "manual", chunk_size: int = 500, chunk_
     embeddings = _embed(chunks)
     if embeddings is None:
         return 0
+
+    if replace_source:
+        client.delete(
+            collection_name=QDRANT_COLLECTION,
+            points_selector=FilterSelector(
+                filter=Filter(must=[FieldCondition(key="source", match=MatchValue(value=source))])
+            ),
+        )
 
     points = [
         PointStruct(
