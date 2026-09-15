@@ -200,6 +200,22 @@ async def relabel_community_art(request: Request, only_missing: bool = False):
     return await asyncio.to_thread(relabel_all, only_missing)
 
 
+@router.post("/admin/community-art/detect-branding")
+async def detect_community_art_branding(request: Request, only_unknown: bool = True):
+    """
+    Decide for each piece whether it already carries Pepecoin branding, and
+    so whether it is served with the watermark. Admin only.
+
+    One vision call per piece. `only_unknown` (the default) limits it to
+    pieces uploaded before the question was asked; pass false to re-judge
+    the whole library.
+    """
+    check_admin_auth(request.headers.get("Authorization"))
+    from services.art_service import detect_branding
+
+    return await asyncio.to_thread(detect_branding, only_unknown)
+
+
 @router.get("/analytics")
 async def analytics_summary(request: Request, days: int = 7):
     """Return an aggregated analytics summary for the last N days."""
@@ -848,7 +864,7 @@ async def update_community_art(art_id: int, req: ArtUpdateRequest, request: Requ
     auth_header = request.headers.get("Authorization")
     check_admin_auth(auth_header)
     from services.art_service import update_art
-    art = update_art(art_id, req.status, req.label)
+    art = update_art(art_id, req.status, req.label, req.has_branding)
     if not art:
         raise HTTPException(status_code=404, detail="Art not found")
     return {"art": art}
@@ -863,9 +879,18 @@ async def delete_community_art(art_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Art not found")
     return {"status": "deleted"}
 
-def _community_art_url(request: Request, filename: str) -> str:
-    """Public URL for a piece: clips stream directly, stills get the watermark."""
-    if filename.lower().endswith((".mp4", ".webm")):
+def _community_art_url(request: Request, piece: dict) -> str:
+    """
+    Public URL for a piece.
+
+    Clips stream directly. Stills and GIFs get the watermark unless the
+    picture already carries Pepecoin branding — a logo on top of a logo
+    reads as clutter, not as attribution. Unknown (never checked) counts as
+    unbranded, so the older library keeps its watermark until the backfill
+    has looked at it.
+    """
+    filename = str(piece["filename"])
+    if filename.lower().endswith((".mp4", ".webm")) or piece.get("has_branding"):
         return f"{request.base_url}community/{filename}"
     return f"{request.base_url}api/watermark?path=/community/{filename}"
 
@@ -899,8 +924,9 @@ async def suggest_community_art(
         # it counts as shown. The sequence is left alone: several pieces at
         # once have no meaningful "last shown" among them.
         record_impression(int(piece["id"]), sequence=False)
-        piece["url"] = _community_art_url(request, str(piece["filename"]))
+        piece["url"] = _community_art_url(request, piece)
         piece.pop("filename", None)
+        piece.pop("has_branding", None)
 
     return result
 
@@ -935,7 +961,7 @@ async def get_random_community_art(
         )
 
     record_impression(int(art["id"]))
-    url = _community_art_url(request, str(art["filename"]))
+    url = _community_art_url(request, art)
 
     # The id travels with the response so a thumbs rating on the message can be
     # credited back to this piece; without it the rating was recorded against

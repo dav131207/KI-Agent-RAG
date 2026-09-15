@@ -86,6 +86,13 @@ _RATING_COLUMNS = {
     # it was named. Not UNIQUE: rows that predate the column share an empty
     # value, and a unique index would refuse to be created over them.
     "content_hash": "TEXT NOT NULL DEFAULT ''",
+    # Whether the picture already carries Pepecoin branding — a logo, the
+    # wordmark, the ticker, an existing watermark. Decided once by the vision
+    # model at upload (or by detect_branding for the older library) and read
+    # when the public URL is built: a second logo on a branded piece is noise.
+    # Nullable on purpose: NULL means "not looked at yet", which is served
+    # with the watermark, and is what the backfill goes looking for.
+    "has_branding": "INTEGER",
 }
 
 MEDIA_TYPES = ("image", "gif", "video")
@@ -225,7 +232,7 @@ def all_labels() -> list[str]:
 _DESCRIBE_PROMPT = """Look at this image, GIF or video from a Pepecoin community member.
 
 Answer with JSON only, no code fence:
-{{"label": "...", "description": "..."}}
+{{"label": "...", "description": "...", "has_branding": true}}
 
 "label" is the category it belongs in: two to four words, Title Case, naming
 what the picture IS rather than what it shows in detail — the kind of heading
@@ -236,21 +243,28 @@ Only invent a new one when none of them apply.
 
 "description" is one to three sentences describing the picture for a community
 member, concrete enough that someone searching for this picture by its subject
-would find it."""
+would find it.
+
+"has_branding" is true only if the picture itself already shows Pepecoin
+branding: the Pepecoin logo, the word "Pepecoin", the ticker "PEP" or "$PEP",
+a project banner, or an existing watermark or signature. A picture of Pepe
+the frog without any of those is false."""
 
 
 def describe_and_label(
     file_path: Path, mime_type: str, known_labels: Optional[list[str]] = None
-) -> tuple[str, str]:
+) -> tuple[str, str, Optional[bool]]:
     """
     Ask the model what this picture is and where it belongs.
 
-    Returns (label, description). Falls back to a usable pair rather than
-    raising: an upload should never be lost because the vision call failed.
+    Returns (label, description, has_branding). Falls back to a usable triple
+    rather than raising: an upload should never be lost because the vision
+    call failed. has_branding is None whenever the model did not answer the
+    question, so the piece keeps its watermark until someone looks.
     """
-    fallback = ("Community Art", "")
+    fallback = ("Community Art", "", None)
     if not genai or not GEMINI_API_KEY:
-        return ("Community Art", "Gemini API not configured. No description generated.")
+        return ("Community Art", "Gemini API not configured. No description generated.", None)
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -275,13 +289,13 @@ def describe_and_label(
         return _parse_label_response(response.text or "", existing, fallback)
     except Exception as e:
         logger.warning("Describing an upload failed: %s", e)
-        return (fallback[0], f"Failed to generate description: {e}")
+        return (fallback[0], f"Failed to generate description: {e}", None)
 
 
 def _parse_label_response(
-    text: str, existing: list[str], fallback: tuple[str, str]
-) -> tuple[str, str]:
-    """Pull the label and description out of the model's answer."""
+    text: str, existing: list[str], fallback: tuple[str, str, Optional[bool]]
+) -> tuple[str, str, Optional[bool]]:
+    """Pull the label, description and branding verdict out of the model's answer."""
     import json
     import re
 
@@ -289,15 +303,20 @@ def _parse_label_response(
     # around it, so the object is located rather than assumed.
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
-        return (fallback[0], text.strip() or fallback[1])
+        return (fallback[0], text.strip() or fallback[1], None)
 
     try:
         parsed = json.loads(match.group(0))
     except json.JSONDecodeError:
-        return (fallback[0], text.strip() or fallback[1])
+        return (fallback[0], text.strip() or fallback[1], None)
 
     label = str(parsed.get("label") or "").strip().strip('"')
     description = str(parsed.get("description") or "").strip()
+    # Only a real boolean counts. A missing or odd value stays "unknown"
+    # rather than becoming "unbranded": the two are served the same way, but
+    # only unknown is picked up again by the backfill.
+    branding = parsed.get("has_branding")
+    has_branding = branding if isinstance(branding, bool) else None
 
     # Snapped back to an existing category when it differs only in case or
     # spacing, so near-duplicates do not accumulate.
@@ -308,7 +327,7 @@ def _parse_label_response(
     if not label or len(label) > 40:
         label = fallback[0]
 
-    return (label, description or fallback[1])
+    return (label, description or fallback[1], has_branding)
 
 
 def generate_description(file_path: Path, mime_type: str) -> str:
@@ -326,16 +345,16 @@ def add_art(
     # An empty label means "you decide": the model names the category from the
     # picture itself, which is both more consistent than what uploaders typed
     # and one less thing to ask them for.
-    generated_label, description = describe_and_label(file_path, mime_type)
+    generated_label, description, has_branding = describe_and_label(file_path, mime_type)
     label = (label or "").strip() or generated_label
     conn = _get_conn()
     cur = conn.cursor()
     media = media_type_for(filename)
     cur.execute(
         "INSERT INTO community_art (filename, label, description, status, created_at,"
-        " media_type, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        " media_type, content_hash, has_branding) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (filename, label, description, "pending", int(time.time()), media,
-         content_hash or hash_file(file_path))
+         content_hash or hash_file(file_path), has_branding)
     )
     conn.commit()
     return {
@@ -345,6 +364,7 @@ def add_art(
         "description": description,
         "status": "pending",
         "media_type": media,
+        "has_branding": has_branding,
     }
 
 def relabel_all(only_missing: bool = False) -> dict:
@@ -374,20 +394,16 @@ def relabel_all(only_missing: bool = False) -> dict:
             skipped += 1
             continue
 
-        directory = MEMES_COMMUNITY_DIR if row["status"] == "approved" else UPLOADS_DIR
-        path = directory / row["filename"]
+        path, mime = _file_for(row)
         if not path.is_file():
             # The row outlived its file; renaming it would invent a category
             # for a picture nobody can see.
             missing += 1
             continue
 
-        mime = {
-            "gif": "image/gif",
-            "video": "video/mp4",
-        }.get(media_type_for(row["filename"]), "image/jpeg")
-
-        label, description = describe_and_label(path, mime, known_labels=assigned)
+        label, description, has_branding = describe_and_label(
+            path, mime, known_labels=assigned
+        )
         if not label:
             skipped += 1
             continue
@@ -397,6 +413,9 @@ def relabel_all(only_missing: bool = False) -> dict:
         if description:
             fields.append("description = ?")
             params.append(description)
+        if has_branding is not None:
+            fields.append("has_branding = ?")
+            params.append(has_branding)
         params.append(row["id"])
         conn.execute(
             f"UPDATE community_art SET {', '.join(fields)} WHERE id = ?", params
@@ -421,12 +440,77 @@ def relabel_all(only_missing: bool = False) -> dict:
     }
 
 
+def _file_for(row: sqlite3.Row) -> tuple[Path, str]:
+    """Where a piece lives on disk, and the MIME type to describe it with."""
+    directory = MEMES_COMMUNITY_DIR if row["status"] == "approved" else UPLOADS_DIR
+    mime = {
+        "gif": "image/gif",
+        "video": "video/mp4",
+    }.get(media_type_for(row["filename"]), "image/jpeg")
+    return directory / row["filename"], mime
+
+
+def detect_branding(only_unknown: bool = True) -> dict:
+    """
+    Decide for each piece whether it already carries Pepecoin branding.
+
+    The backfill for a library uploaded before the question was asked. Same
+    vision call as relabel_all, but only the branding verdict is written:
+    names and descriptions someone may have corrected by hand stay as they
+    are. Blocking; callers run it off the event loop.
+    """
+    conn = _get_conn()
+    sql = "SELECT id, filename, status, has_branding FROM community_art"
+    if only_unknown:
+        sql += " WHERE has_branding IS NULL"
+    rows = conn.execute(sql + " ORDER BY id").fetchall()
+
+    branded = 0
+    unbranded = 0
+    undecided = 0
+    missing = 0
+    for row in rows:
+        path, mime = _file_for(row)
+        if not path.is_file():
+            missing += 1
+            continue
+        _, _, has_branding = describe_and_label(path, mime, known_labels=[])
+        if has_branding is None:
+            undecided += 1
+            continue
+        conn.execute(
+            "UPDATE community_art SET has_branding = ? WHERE id = ?",
+            (has_branding, row["id"]),
+        )
+        if has_branding:
+            branded += 1
+        else:
+            unbranded += 1
+
+    conn.commit()
+    logger.info(
+        "Branding check: %s branded, %s unbranded, %s undecided, %s missing files",
+        branded, unbranded, undecided, missing,
+    )
+    return {
+        "branded": branded,
+        "unbranded": unbranded,
+        "undecided": undecided,
+        "missing_files": missing,
+    }
+
+
 def get_all_art() -> list[dict]:
     conn = _get_conn()
     rows = conn.execute("SELECT * FROM community_art ORDER BY created_at DESC").fetchall()
     return [dict(row) for row in rows]
 
-def update_art(art_id: int, status: str, label: str) -> Optional[dict]:
+def update_art(
+    art_id: int, status: str, label: str, has_branding: Optional[bool] = None
+) -> Optional[dict]:
+    """Change a piece's status or name; has_branding only when given, since
+    the vision model's verdict is right often enough that a save from the
+    approval screen must not silently reset it."""
     conn = _get_conn()
     row = conn.execute("SELECT * FROM community_art WHERE id = ?", (art_id,)).fetchone()
     if not row:
@@ -448,10 +532,13 @@ def update_art(art_id: int, status: str, label: str) -> Optional[dict]:
         if src.exists():
             shutil.move(str(src), str(dest))
 
-    conn.execute(
-        "UPDATE community_art SET status = ?, label = ? WHERE id = ?",
-        (status, label, art_id)
-    )
+    fields = ["status = ?", "label = ?"]
+    params: list[Any] = [status, label]
+    if has_branding is not None:
+        fields.append("has_branding = ?")
+        params.append(has_branding)
+    params.append(art_id)
+    conn.execute(f"UPDATE community_art SET {', '.join(fields)} WHERE id = ?", params)
     conn.commit()
     row = conn.execute("SELECT * FROM community_art WHERE id = ?", (art_id,)).fetchone()
     return dict(row) if row else None
@@ -762,6 +849,7 @@ def suggest_art(text: str, limit: int = 4, media: Optional[str] = None) -> dict:
                 "label": row["label"],
                 "description": row["description"],
                 "media_type": row["media_type"],
+                "has_branding": row["has_branding"],
                 "matched": keyword > 0,
                 "score": round(total, 4),
             }

@@ -66,3 +66,7 @@ class EventRequest(BaseModel):
 class ArtUpdateRequest(BaseModel):
     status: str = Field(..., description="Status (pending, approved, rejected)")
     label: str = Field(..., description="Label for the art")
+    has_branding: Optional[bool] = Field(
+        None,
+        description="Picture already carries Pepecoin branding, so it is served without the watermark. Omit to leave the stored verdict alone.",
+    )

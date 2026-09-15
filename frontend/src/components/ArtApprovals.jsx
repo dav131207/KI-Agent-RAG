@@ -28,7 +28,9 @@ export default function ArtApprovals({ token }) {
     }
   }
 
-  const handleUpdate = async (id, status, label) => {
+  // `extra` carries fields that only some saves change (has_branding); the
+  // backend leaves out anything not sent, so a status click never resets it.
+  const handleUpdate = async (id, status, label, extra = {}) => {
     try {
       const res = await fetch(`${API_BASE}/api/admin/community-art/${id}`, {
         method: 'PUT',
@@ -36,7 +38,7 @@ export default function ArtApprovals({ token }) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ status, label })
+        body: JSON.stringify({ status, label, ...extra })
       })
       if (!res.ok) throw new Error('Update failed')
       fetchArt()
@@ -129,6 +131,30 @@ export default function ArtApprovals({ token }) {
                     {art.description}
                   </p>
                 </div>
+                {art.media_type !== 'video' && (
+                  <div>
+                    {/* Judged by the model from the picture: a piece that already
+                        shows the logo or the wordmark goes out without the
+                        watermark. Wrong often enough to keep the switch here. */}
+                    <label className="text-[10px] font-bold text-brand-500 uppercase">
+                      Watermark
+                      {art.has_branding == null && (
+                        <span className="font-normal normal-case opacity-60"> — not checked yet</span>
+                      )}
+                    </label>
+                    <label className="flex items-center gap-2 mt-1 text-xs cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={!!art.has_branding}
+                        onChange={(e) => handleUpdate(art.id, art.status, art.label, { has_branding: e.target.checked })}
+                        className="accent-accent"
+                      />
+                      <span className="text-brand-700 dark:text-brand-300">
+                        Already branded — serve without watermark
+                      </span>
+                    </label>
+                  </div>
+                )}
                 {art.status === 'approved' && (
                   <div>
                     <label className="text-[10px] font-bold text-brand-500 uppercase">Community</label>
