@@ -24,6 +24,10 @@ class ImageRequest(BaseModel):
     )
 
 
+class ImageIntentRequest(BaseModel):
+    message: str = Field(..., min_length=1, description="The chat message as typed")
+
+
 class EmoteRequest(BaseModel):
     text: str = Field(..., min_length=1, description="Text to pick an emote for")
 

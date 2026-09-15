@@ -192,7 +192,9 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
                 {msg.emote ? `${textWithLinks.trim()} ![emote](${msg.emote})` : textWithLinks}
               </ReactMarkdown>
               {msg.artPicker && <CommunityArtPicker text={msg.text} />}
-              {msg.pepePicker && <PepePicker topic={msg.pepeQuery} text={msg.text} />}
+              {msg.pepePicker && (
+                <PepePicker topic={msg.pepeQuery} text={msg.text} search={msg.pepeSearch} />
+              )}
               {isSocialPost && <EmotePicker text={msg.text} />}
             </div>
           )}

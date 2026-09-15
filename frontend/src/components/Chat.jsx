@@ -306,8 +306,23 @@ export default function Chat({ isDark }) {
     }
 
     try {
-      const wantsImage = /\b(show|image|picture|pic|photo|visual|draw|meme)\b/i.test(sendText)
       const isSocialCommand = /^create\s+a?\s*social\s+media\s+post/i.test(sendText)
+      // Whether the message asks to see a picture, and of what, is decided
+      // by a small model call rather than an English word list: "ich bin auf
+      // der Suche nach einem Pepe der Fußball spielt" matched no list, and
+      // the index is captioned in English whatever language the request is
+      // in. Started here and awaited only when the reply is appended, so it
+      // costs the stream nothing. Commands carry their own visual choice.
+      const intentPromise =
+        !command && !isSocialCommand
+          ? fetch(`${API_BASE}/api/image-intent`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ message: sendText }),
+            })
+              .then((res) => (res.ok ? res.json() : null))
+              .catch(() => null)
+          : Promise.resolve(null)
       // The chain card used to be forced by the goal alone. It is now what the
       // Data goal offers first, but the author can pick something else.
       const wantsChainCard = isSocialCommand && visual === 'Chain'
@@ -321,8 +336,8 @@ export default function Chat({ isDark }) {
 
       let imageUrl = null
       // A social post's image is fetched after generation instead, so the
-      // finished text can rank the candidates. Only the chain card and plain
-      // image requests can be resolved up front.
+      // finished text can rank the candidates; a plain picture request gets
+      // its shortlist the same way. Only the chain card is resolved up front.
       if (wantsChainCard) {
         // The card 503s when the explorer is down; probe the JSON endpoint
         // first (same 60s cache, no image rendering) so a dead explorer leaves
@@ -333,8 +348,6 @@ export default function Chat({ isDark }) {
         imageUrl = chainOk
           ? `${API_BASE}/api/chain-stats.png?metric=${pickChainMetric(sendText)}&t=${Date.now()}`
           : null
-      } else if (wantsImage && !isSocialCommand) {
-        imageUrl = await fetchImage(sendText)
       }
 
       const history = messages
@@ -379,6 +392,12 @@ export default function Chat({ isDark }) {
         emoteUrl = await fetchEmote(fullText)
       }
 
+      const intent = await intentPromise
+      const wantsSearchPicker = Boolean(intent?.wants_image)
+      if (wantsSearchPicker) {
+        trackEvent('image_search', { message: sendText, search: intent.search || '' })
+      }
+
       setMessages((prev) => [
         ...prev,
         {
@@ -391,8 +410,11 @@ export default function Chat({ isDark }) {
           ragChunkIds,
           isSocialPost: isSocialCommand,
           artPicker: wantsArtPicker,
-          pepePicker: wantsPepePicker,
-          pepeQuery: wantsPepePicker ? sendText : null,
+          pepePicker: wantsPepePicker || wantsSearchPicker,
+          // The extracted term for a search; the post command for a post,
+          // whose subject the endpoint pulls out itself.
+          pepeQuery: wantsSearchPicker ? intent.search || '' : wantsPepePicker ? sendText : null,
+          pepeSearch: wantsSearchPicker,
         },
       ])
       setTypingText('')
@@ -408,21 +430,6 @@ export default function Chat({ isDark }) {
     } finally {
       setLoading(false)
       trackEvent('request_latency', { latency_ms: measureLatency(startTime), command: commandId || sendText })
-    }
-  }
-
-  const fetchImage = async (search, context) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/image`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: search, context }),
-      })
-      if (!res.ok) return null
-      const data = await res.json()
-      return data.url || null
-    } catch {
-      return null
     }
   }
 

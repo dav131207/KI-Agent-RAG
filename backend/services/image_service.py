@@ -271,9 +271,13 @@ async def fetch_onlypepes_candidates(
     topic: Optional[str],
     context: Optional[str] = None,
     limit: int = 1,
-) -> list[dict]:
+) -> tuple[list[dict], bool]:
     """
     Fetch Pepe images from the OnlyPepes API, best match first.
+
+    Returns the candidates and whether they actually matched the topic. The
+    random fallback keeps a post illustrated, but handed to someone who
+    asked for "football" it must not be presented as football.
 
     `topic` is the search query — narrow, so the index returns candidates at
     all. `context` is what they are ranked against, and should be the finished
@@ -318,20 +322,22 @@ async def fetch_onlypepes_candidates(
 
     # A precise topic can legitimately match nothing. Falling back to random
     # images keeps a post illustrated instead of failing the whole request.
+    matched = bool(candidates) and not is_pure_random
     if not candidates and not is_pure_random:
         candidates = await _query({"limit": limit, "random": "true"})
 
     if not candidates:
         raise HTTPException(status_code=404, detail="No image found")
 
-    return candidates[:limit]
+    return candidates[:limit], matched
 
 
 async def fetch_onlypepes_image(
     http_client: httpx.AsyncClient, topic: Optional[str], context: Optional[str] = None
 ) -> dict:
     """Fetch the single best-matching Pepe image."""
-    return (await fetch_onlypepes_candidates(http_client, topic, context, limit=1))[0]
+    candidates, _ = await fetch_onlypepes_candidates(http_client, topic, context, limit=1)
+    return candidates[0]
 
 
 def build_watermarked_url(base_url: str, external_url: Optional[str], filename: Optional[str]) -> Optional[str]:

@@ -30,6 +30,7 @@ from api.schemas import (
     ChatRequest,
     EmoteRequest,
     EventRequest,
+    ImageIntentRequest,
     ImageRequest,
     IngestTextRequest,
     RarePepeRequest,
@@ -43,6 +44,7 @@ from services.chain_image_service import render_chain_stats_card
 from services.chat_service import GET_COINS_TEXTS, generate_chat_response, is_social_command
 from services.crypto_service import get_pepe_chain_data
 from services.emote_service import emote_files, export_emote, pick_emote, suggest_emotes
+from services.image_search_service import detect_image_intent
 from services.image_service import (
     ALLOWED_IMAGE_PREFIXES,
     EXTERNAL_IMAGE_TIMEOUT,
@@ -411,8 +413,11 @@ async def fetch_images(req: ImageRequest, request: Request):
     post than none.
     """
     limit = max(1, min(req.count or 4, 8))
-    candidates = await fetch_onlypepes_candidates(http, req.topic, req.context, limit)
+    candidates, matched = await fetch_onlypepes_candidates(http, req.topic, req.context, limit)
     return {
+        # False when the topic found nothing and these are the random
+        # fallback; the picker says so instead of presenting them as a match.
+        "matched": matched,
         "images": [
             {
                 # The index has no stable id of its own, so the image URL is
@@ -426,6 +431,18 @@ async def fetch_images(req: ImageRequest, request: Request):
             if pepe.get("url")
         ]
     }
+
+
+@router.post("/image-intent")
+async def image_intent(req: ImageIntentRequest):
+    """
+    Is this message asking for a picture, and of what?
+
+    Called by the chat client alongside the chat request, so the answer
+    costs no latency on the stream; it decides whether the reply gets a
+    shortlist of Pepes hung under it.
+    """
+    return await detect_image_intent(req.message)
 
 
 @router.post("/get_coins")
