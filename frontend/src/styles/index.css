@@ -62,33 +62,153 @@
     @apply w-2 h-2 rounded-full bg-brand-400 dark:bg-brand-500 animate-bounce;
   }
 
-  .prose a {
+  /*
+   * Everything the agent writes arrives as markdown. It used to be handed to
+   * `prose prose-sm dark:prose-invert`, but @tailwindcss/typography is not a
+   * dependency and `plugins: []` never loaded it, so those three classes
+   * matched no CSS at all. Preflight meanwhile strips headings back to body
+   * text and takes the markers off lists, which is why a structured answer —
+   * a post with a heading, bullets and a numbered thread — arrived as one
+   * undifferentiated block. These rules are that missing stylesheet, tuned for
+   * a chat bubble rather than an article: tighter margins, and every element
+   * that can be wider than the bubble is made to scroll inside it instead of
+   * pushing the layout sideways on a phone.
+   */
+  .md-body {
+    @apply text-sm leading-relaxed;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    min-width: 0;
+  }
+
+  .md-body > *:first-child {
+    margin-top: 0;
+  }
+
+  .md-body > *:last-child {
+    margin-bottom: 0;
+  }
+
+  .md-body p {
+    @apply my-2;
+  }
+
+  .md-body h1,
+  .md-body h2,
+  .md-body h3,
+  .md-body h4 {
+    @apply font-bold mt-4 mb-2 leading-snug text-brand-900 dark:text-brand-50;
+  }
+
+  .md-body h1 {
+    @apply text-lg sm:text-xl;
+  }
+
+  .md-body h2 {
+    @apply text-base sm:text-lg;
+  }
+
+  .md-body h3 {
+    @apply text-sm sm:text-base;
+  }
+
+  .md-body h4 {
+    @apply text-sm uppercase tracking-wide text-brand-600 dark:text-brand-300;
+  }
+
+  /* Preflight sets list-style: none. Without this a bulleted answer reads as
+     loose lines and a numbered thread loses its numbers. */
+  .md-body ul,
+  .md-body ol {
+    @apply my-2 pl-5 space-y-1;
+  }
+
+  .md-body ul {
+    list-style: disc;
+  }
+
+  .md-body ol {
+    list-style: decimal;
+  }
+
+  .md-body li::marker {
+    @apply text-brand-400 dark:text-brand-500;
+  }
+
+  .md-body li > ul,
+  .md-body li > ol {
+    @apply my-1;
+  }
+
+  /* Reddit posts come back with the post text inside a blockquote, so this is
+     load-bearing: it is what separates the post from the advice about it. */
+  .md-body blockquote {
+    @apply my-3 pl-3 border-l-2 border-accent/60 text-brand-700 dark:text-brand-200 italic;
+  }
+
+  .md-body blockquote p {
+    @apply my-1;
+  }
+
+  .md-body strong {
+    @apply font-bold text-brand-900 dark:text-white;
+  }
+
+  .md-body em {
+    @apply italic;
+  }
+
+  .md-body hr {
+    @apply my-3 border-t border-brand-200 dark:border-white/10;
+  }
+
+  .md-body code {
+    @apply px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 font-mono text-[0.85em];
+  }
+
+  /* A code block must scroll on its own. Left to wrap it is unreadable; left
+     to overflow it drags the whole page sideways on a phone. */
+  .md-body pre {
+    @apply my-3 p-3 rounded-xl bg-black/5 dark:bg-black/40 overflow-x-auto;
+  }
+
+  .md-body pre code {
+    @apply p-0 bg-transparent whitespace-pre;
+  }
+
+  .md-body table {
+    @apply w-full text-left border-collapse text-[0.9em];
+  }
+
+  .md-body th,
+  .md-body td {
+    @apply px-2 py-1 border border-brand-200 dark:border-white/10 align-top;
+  }
+
+  .md-body th {
+    @apply font-semibold bg-black/5 dark:bg-white/5;
+  }
+
+  .md-body a {
     @apply text-blue-500 hover:text-blue-600 underline decoration-blue-500/50 dark:text-blue-400 dark:hover:text-blue-300;
   }
 
-  .prose p img {
+  /* Pictures the post carries — the attached meme, a chain card — are their
+     own block. Only the emote is a character in a sentence, and it says so in
+     its alt text; the old rule keyed on "img inside a p", which an attached
+     meme also satisfies, and shrank it to 20 pixels tall. */
+  .md-body img {
+    @apply block my-2 mx-auto max-w-full h-auto max-h-48 sm:max-h-56 md:max-h-64 w-auto rounded-xl;
+  }
+
+  .md-body img[alt='emote'] {
     display: inline;
     height: 1.25em;
     width: auto;
-    vertical-align: -0.15em;
+    max-height: none;
     margin: 0;
-  }
-
-  .message-bubble-user .prose ul,
-  .message-bubble-agent .prose ul,
-  .message-bubble-user .prose ol,
-  .message-bubble-agent .prose ol {
-    padding-left: 1rem;
-  }
-
-  .message-bubble-user .prose,
-  .message-bubble-agent .prose,
-  .message-bubble-user .prose p,
-  .message-bubble-agent .prose p,
-  .message-bubble-user .prose li,
-  .message-bubble-agent .prose li {
-    overflow-wrap: anywhere;
-    word-break: normal;
+    vertical-align: -0.15em;
+    border-radius: 0;
   }
 }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import EmotePicker from './EmotePicker'
 import CommunityArtPicker from './CommunityArtPicker'
@@ -28,6 +28,14 @@ function linkify(text) {
 }
 
 const markdownComponents = {
+  // remark-gfm turns a pipe table into a real <table>, which cannot be made
+  // narrower than its columns. Inside a bubble on a phone it dragged the page
+  // sideways; in its own scroller it stays put and scrolls itself.
+  table: ({ node, ...props }) => (
+    <div className="my-3 -mx-1 overflow-x-auto">
+      <table {...props} />
+    </div>
+  ),
   a: ({ node, href, ...props }) => {
     const handleClick = () => {
       const hrefLower = (href || '').toLowerCase()
@@ -39,6 +47,17 @@ const markdownComponents = {
     }
     return <a href={href} onClick={handleClick} target="_blank" rel="noopener noreferrer" {...props} />
   },
+}
+
+// What the author actually pastes into X or Reddit: the words, without the
+// markdown scaffolding for pictures the platform will not render anyway. The
+// attached meme and the emote are files to upload by hand, and their URLs
+// pasted into a post read as literal noise.
+function copyableText(text) {
+  return (text || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 // A thumbs-down says an answer was bad but not what was wrong with it, and
@@ -61,6 +80,19 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
   const [feedback, setFeedback] = useState(null)
   const [askReason, setAskReason] = useState(false)
   const [imageFailed, setImageFailed] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(copyableText(msg.text))
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard access can be refused (an insecure origin, or a browser that
+      // wants a fresher gesture). Selecting the text by hand still works, so
+      // there is nothing to announce.
+    }
+  }
 
   const sendFeedback = (type, reason) => {
     const metadata = {}
@@ -155,7 +187,7 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
             )
           )}
           {msg.text && (
-            <div className="prose prose-sm dark:prose-invert max-w-none break-words [overflow-wrap:anywhere]">
+            <div className="md-body max-w-none break-words [overflow-wrap:anywhere]">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {msg.emote ? `${textWithLinks.trim()} ![emote](${msg.emote})` : textWithLinks}
               </ReactMarkdown>
@@ -190,6 +222,15 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
               aria-label="Not helpful"
             >
               <ThumbsDown size={12} className="sm:w-3.5 sm:h-3.5" />
+            </button>
+
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-1 px-2 py-1.5 -my-0.5 rounded-md text-[10px] sm:text-[11px] font-medium text-brand-400 hover:text-accent dark:text-brand-500 dark:hover:text-accent transition-colors"
+              aria-label={copied ? 'Copied' : 'Copy text'}
+            >
+              {copied ? <Check size={12} className="text-accent" /> : <Copy size={12} />}
+              {copied ? 'Copied' : 'Copy'}
             </button>
 
             {askReason && (

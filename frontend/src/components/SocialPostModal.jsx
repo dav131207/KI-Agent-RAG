@@ -19,6 +19,7 @@ const PLATFORMS = [
 // a newcomer could not decode. The question is what the post should achieve.
 const GOALS = [
   { id: 'Community', label: 'Post to the community', desc: 'Classic Pepe style, with cashtags and the usual handles' },
+  { id: 'Shill', label: 'Shill / Moon', desc: 'Loud and high-conviction, built to get quoted — momentum, never price' },
   { id: 'Explain', label: 'Explain something', desc: 'Break the tech down so anyone can follow it' },
   { id: 'Outside', label: 'Reach people outside crypto', desc: 'No slang — framed for a tech or public-sector audience' },
   { id: 'Discussion', label: 'Start a discussion', desc: 'Ends on a question that gets people replying' },
@@ -144,6 +145,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
     Outside: 'Which tech or public-sector topic should we bridge to?',
     Data: 'E.g. hashrate, block times, Scrypt economics...',
     Provoke: 'Which common assumption should we push back on?',
+    Shill: 'What are we being loud about? (momentum, hashrate, the fair launch...)',
     Explain: 'What should we explain?',
     Poll: 'What should people place themselves on? (e.g. how long they have been here)',
   }

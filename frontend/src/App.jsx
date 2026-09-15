@@ -126,7 +126,13 @@ export default function App() {
         <MobileBanner />
         <ParticlesBackground isDark={isDark} />
         <div className="flex-1 flex overflow-hidden">
-        <main className="flex-1 flex flex-col relative">
+        {/* min-w-0: a flex item refuses to shrink below its content's minimum
+            width unless told otherwise, and the command row inside is 748px
+            wide by design (it scrolls sideways on its own). Without this the
+            whole column was laid out at 748px on a 390px phone, so the header
+            ran off the right edge and the messages, the chips and the input
+            were all parked outside the screen. */}
+        <main className="flex-1 min-w-0 flex flex-col relative">
           {/* sticky as a second line of defence: even if something below ever
               makes the page scroll, the hero stays pinned to the top. */}
           <header className="sticky top-0 shrink-0 z-30 flex items-center justify-between md:grid md:grid-cols-[1fr_auto_1fr] gap-2 px-3 sm:px-4 md:px-6 py-2 bg-brand-800/70 dark:bg-brand-950/60 backdrop-blur-xl border-b border-brand-700/30 dark:border-white/5">

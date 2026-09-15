@@ -167,8 +167,12 @@ export default function Chat({ isDark }) {
     }
   }, [])
 
+  // block: 'end' matters. scrollIntoView defaults to 'start', which aligned
+  // the top of the trailing spacer with the top of the viewport and left the
+  // finished answer scrolled off above it — on a phone the whole screen was
+  // the empty space below the post.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, typingText])
 
   useEffect(() => {
@@ -186,13 +190,32 @@ export default function Chat({ isDark }) {
      * scroll or resize forces a repaint. A net-zero scrollTop nudge forces
      * that repaint without moving the visible scroll position.
      */
+    /*
+     * The same late growth also strands the reader. The scroll-to-bottom
+     * effect runs while the avatars, the attached meme and the pickers are
+     * still loading, so it scrolls to an end that is not the end yet: by the
+     * time the pictures arrive the answer has grown several hundred pixels
+     * below the fold and nothing scrolls again. Anyone who was sitting at the
+     * bottom is kept there as the content grows; anyone who scrolled up to
+     * read is left alone.
+     */
+    let pinned = true
+    const onScroll = () => {
+      pinned = container.scrollHeight - container.clientHeight - container.scrollTop < 120
+    }
+    container.addEventListener('scroll', onScroll, { passive: true })
+
     const observer = new ResizeObserver(() => {
       const top = container.scrollTop
       container.scrollTop = top + 1
       container.scrollTop = top
+      if (pinned) container.scrollTop = container.scrollHeight
     })
     observer.observe(content)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      container.removeEventListener('scroll', onScroll)
+    }
   }, [])
 
   const handleSubmit = async (e, command = null) => {
@@ -450,7 +473,7 @@ export default function Chat({ isDark }) {
       {/* messages */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto scrollbar-thin px-3 sm:px-4 md:px-8 py-4 sm:py-6 pb-64"
+        className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-3 sm:px-4 md:px-8 py-4 sm:py-6"
       >
         <div ref={messageContentRef} className="space-y-4 sm:space-y-6">
           <AnimatePresence initial={false}>
@@ -486,8 +509,10 @@ export default function Chat({ isDark }) {
                 alt="Professor Pepe"
                 className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-xl object-cover shadow-sm"
               />
-              <div className={`message-bubble-agent px-3 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3.5 max-w-[88%] sm:max-w-[85%] md:max-w-[80%]`}>
-                <p className="whitespace-pre-wrap text-sm sm:text-base">{typingText}</p>
+              <div className={`message-bubble-agent px-3 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3.5 min-w-0 max-w-[88%] sm:max-w-[85%] md:max-w-[80%]`}>
+                {/* An unbroken URL arriving mid-stream is exactly the kind of
+                    token that widens the bubble past the screen. */}
+                <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm sm:text-base">{typingText}</p>
                 <span className="inline-block mt-2 w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
               </div>
             </motion.div>
@@ -512,13 +537,17 @@ export default function Chat({ isDark }) {
             </motion.div>
           )}
 
-          <div ref={bottomRef} className="h-32 md:h-48 shrink-0" />
+          <div ref={bottomRef} className="h-1 shrink-0" />
         </div>
       </div>
 
       {/* input area */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 px-3 sm:px-4 md:px-8 pt-12 pb-6 sm:pb-8 bg-gradient-to-t from-brand-900 via-brand-900/95 to-transparent pointer-events-none">
-        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto relative pointer-events-auto">
+      {/* Laid out as the last row of the column rather than floating over the
+          messages. As an overlay it hid the bottom of every answer, which the
+          list compensated for with 384px of reserved dead space — and that
+          space, not the overlay, is what pushed a fresh post off the screen. */}
+      <div className="shrink-0 z-20 px-3 sm:px-4 md:px-8 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-4 bg-brand-900/95 backdrop-blur-md border-t border-white/5">
+        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto relative">
           {/* horizontally scrollable flex row on mobile, flex-wrap on desktop */}
           <div className="relative">
             <AnimatePresence>
