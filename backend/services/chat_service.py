@@ -127,6 +127,41 @@ GOAL_INSTRUCTIONS = {
         "Check the conversation history below before writing: if a recent post already used a "
         "given angle, opening line, or punchline structure, pick a different one now."
     ),
+    "shill": (
+        "GOAL — SHILL / MOON: Be loud. The coin is running and this post is meant to be seen by "
+        "people who do not follow the account yet. Loud means high conviction and a claim worth "
+        "arguing with — it does not mean rocket emojis, and it never means talking about price.\n"
+        "1. WHAT ACTUALLY TRAVELS HERE: out-of-network reach comes almost entirely from reposts "
+        "and quotes. A reply and a quote each count roughly ten times a like, a share four times. "
+        "So write a line somebody would forward with their own comment attached: a stance, a "
+        "reframe, or one hard fact that sounds like a boast but is checkable. A post that only "
+        "collects likes has bought nothing.\n"
+        "2. HOOK IN THE FIRST LINE. Only the opening line survives the feed. Lead with the "
+        "strongest concrete thing you have — never with a greeting, a throat-clear, or 'let me "
+        "tell you why'.\n"
+        "3. BE LOUD ABOUT THE RIGHT NOUN: momentum, hashrate and the shared Scrypt miner base, "
+        "node count, holders, the fair launch, no premine, no insider allocation, how long the "
+        "chain has been running without a treasury. These are the boasts nobody can take away.\n"
+        "4. NEVER ABOUT PRICE. No price, no market cap targets, no 'up X%', no 'still early', no "
+        "'next 100x', no 'you will regret missing this', no urgency to buy. This is not caution "
+        "for its own sake: a post that reads as a financial pitch gets reported, and one report "
+        "outweighs everything the post earned by a factor of hundreds. Price talk is the single "
+        "most expensive thing you could write here.\n"
+        "5. NO ENGAGEMENT BAIT. Never write 'RT if', 'like if', 'follow for more', 'comment "
+        "below', or 'tag a friend'. The platform demotes the explicit ask, and a good line earns "
+        "the repost without begging for it.\n"
+        "6. EMOJI AND PUNCTUATION: at most one emoji, and no rocket-and-fire strings. WORDS in "
+        "caps for one beat of emphasis is fine, a whole sentence is not. Emoji spam is the visual "
+        "signature of the posts people mute.\n"
+        "7. TAGS: exactly one cashtag, $PEP, and at most one hashtag — usually none. Include "
+        "@PepecoinNetwork. Name @dogecoin, @litecoin or @Bitcoin only when the sentence genuinely "
+        "compares them; do not stack handles for reach, it reads as a spam post and travels less.\n"
+        "8. VOICE: write as a holder who is enjoying this, not as the project and not as an "
+        "advertisement. Cocky is allowed, desperate is not. Short sentences. One idea. Land it "
+        "and stop — a loud post that keeps talking stops being loud.\n"
+        "9. Every number you use must come from the data you were given. An invented figure is "
+        "the one thing that turns a loud post into a liability."
+    ),
     "explain": (
         "GOAL — EXPLAIN SOMETHING: Break the mechanism down so a curious outsider can follow it. "
         "Define each technical term the first time it appears. Lead with the concept and use "
@@ -184,7 +219,9 @@ GOAL_INSTRUCTIONS = {
         "physical miner base as Doge/Litecoin.\n"
         "4. ADMIT WEAKNESSES: Build credibility by admitting the limits of merged mining (e.g. "
         "'borrowed hashrate').\n"
-        "5. Use relevant hashtags/cashtags ($DOGE, $LTC, $PEP) but keep it academic and structural."
+        "5. Cashtags ($DOGE, $LTC, $PEP) are fine where the coin is genuinely the subject of the "
+        "sentence. No hashtags — this audience reads them as marketing, and marketing is what "
+        "costs you an analytical post's credibility. Keep it academic and structural."
     ),
     "reply": (
         "GOAL — REPLY TO SOMEONE: You are replying to a post from a mid-tier account "
@@ -258,6 +295,14 @@ def build_contents(
                 "WHAT DESTROYS IT: being reported outweighs any engagement many times over. Never "
                 "write anything that reads as a financial pitch, a guaranteed return, or pressure "
                 "to buy. "
+                "HASHTAGS: at most ONE, and zero is the right number for most posts. A hashtag "
+                "does nothing for distribution here — the ranking works on the text itself — so "
+                "the only reason to use one is that the tag is a room people actually read, and "
+                "the post belongs in it. A stack of them is a spam signal and costs you reach. "
+                "Never use filler tags like #crypto, #web3, #altcoin, #100x, #gem or #tothemoon; "
+                "if a tag would fit any post about any coin, it is worthless. Cashtags ($PEP) are "
+                "not hashtags and are governed by the goal below. If the goal forbids hashtags, "
+                "that wins — use none. "
             )
         elif platform == "reddit":
             system += (
@@ -265,6 +310,9 @@ def build_contents(
                 "Keep it concise, conversational, and non-promotional. "
                 "Do not write it like an ad or 'Due Diligence' unless explicitly asked. "
                 "Do NOT use Twitter @ handles. Refer to Pepecoin natively. "
+                "CRITICAL: NEVER use hashtags. They do nothing on Reddit and mark the post as "
+                "imported promotional copy, which is what the spam filters and the readers are "
+                "both looking for. "
                 "CRITICAL: Do NOT mention other cryptocurrencies like Dogecoin, Litecoin, or "
                 "Bitcoin unless absolutely necessary to avoid automated spam filters. "
                 "CRITICAL: Avoid words like 'buy', 'invest', 'moon', 'gem', or 'pump'. "
@@ -283,8 +331,12 @@ def build_contents(
                 "Keep it punchy, conversational, and highly engaging for Gen-Z. "
                 "Open with a strong hook that withholds the payoff, and land the payoff only at "
                 "the very end so people watch twice. "
-                "Include viral hashtags like #Pepecoin #Crypto #Web3 and ask a question to drive "
-                "comments."
+                "HASHTAGS: two, at most three, and they are routing instructions rather than "
+                "decoration — TikTok reads them to decide which feed the video belongs in. Pair "
+                "ONE broad tag naming the actual subject with ONE narrow tag naming the specific "
+                "community that would watch this to the end. Never use #fyp, #foryou, #viral or "
+                "#trending; they route nowhere and read as a bid for attention. "
+                "End on a question that costs one line to answer."
             )
 
         for goal_key, instruction in GOAL_INSTRUCTIONS.items():
@@ -461,13 +513,18 @@ async def format_social_post(
     strategy: str = "community",
     post_format: str = "thread",
 ) -> str:
-    """Normalize coin names to X/Twitter handles and ensure @PepecoinNetwork only for standard posts."""
+    """Normalize coin names to X/Twitter handles and ensure @PepecoinNetwork is present.
+
+    Applies to the community and shill goals: both address the existing
+    audience, where the handles are the convention. The goals written for
+    people outside crypto deliberately carry neither.
+    """
     text = (text or "").strip()
 
     if platform != "twitter":
         return text
 
-    if strategy == "community":
+    if strategy in ("community", "shill"):
         text = re.sub(r"(?<!@)\bDogecoin\b", "@dogecoin", text, flags=re.IGNORECASE)
         text = re.sub(r"(?<!@)\bLitecoin\b", "@litecoin", text, flags=re.IGNORECASE)
         text = re.sub(r"(?<!@)\bBitcoin\b", "@Bitcoin", text, flags=re.IGNORECASE)
