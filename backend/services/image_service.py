@@ -363,18 +363,17 @@ def passthrough_image_bytes(
     return data, media_type
 
 
-def build_watermarked_url(
-    base_url: str,
-    external_url: Optional[str],
-    filename: Optional[str],
-    watermark: bool = True,
-) -> Optional[str]:
-    """Build a proxied image URL for an external or local image, watermarked unless told otherwise."""
-    suffix = "" if watermark else "&watermark=false"
+def build_watermarked_url(base_url: str, external_url: Optional[str], filename: Optional[str]) -> Optional[str]:
+    """
+    Build a watermarked image URL for an external or local image.
+
+    Always watermarked: that is what the chat shows. The client appends
+    `&watermark=false` to this same URL when someone saves the original.
+    """
     if external_url:
-        return f"{base_url}api/watermark?url={quote(external_url, safe='')}{suffix}"
+        return f"{base_url}api/watermark?url={quote(external_url, safe='')}"
     if filename and MEMES_DIR and MEMES_DIR.is_dir():
-        return f"{base_url}api/watermark?path=/memes/{quote(filename, safe='')}{suffix}"
+        return f"{base_url}api/watermark?path=/memes/{quote(filename, safe='')}"
     return None
 
 

@@ -141,12 +141,14 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
       {isUser ? (
         <img
           src="/user.png"
+          data-lightbox-ignore
           alt="User"
           className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-xl object-cover shadow-sm"
         />
       ) : (
         <img
           src="/agent.png"
+          data-lightbox-ignore
           alt="Professor Pepe"
           className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-xl object-cover shadow-sm"
         />

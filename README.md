@@ -16,8 +16,11 @@ Click the button above, connect your GitHub account, and fill in the environment
 
 ## Features
 
-- 💬 **Chat** with streaming responses
-- 🖼️ **Random Meme / Rare Pepe / Social Media Post** commands
+- 💬 **Chat** with streaming responses, grounded in a Qdrant knowledge base (RAG)
+- 🖼️ **Random Meme / Rare Pepe / Community Art / Social Media Post** commands
+- 🔍 **Picture search in plain language**, any language — "ich suche einen Pepe der Fußball spielt" gets a shortlist of four
+- 💧 **Watermark on every picture shown**; when saving, each picture offers *with watermark* or *original*
+- 🎨 **Community art** uploads, described and categorised by the vision model; pieces that already carry Pepecoin branding are served without the watermark
 - 🌙 **Dark & light themes** with smooth transitions
 - ✨ **Polished animations** via Framer Motion
 - 📝 **Markdown rendering** for assistant responses
@@ -29,7 +32,13 @@ Click the button above, connect your GitHub account, and fill in the environment
 ```
 zen-ai-agent/
 ├── backend/
-│   ├── main.py              # FastAPI + Gemini + image proxy
+│   ├── main.py              # FastAPI app
+│   ├── api/                 # routes and request schemas
+│   ├── services/            # chat, images, community art, intent detection
+│   ├── rag/                 # Qdrant store, chunking, retrieval
+│   ├── knowledge/           # markdown the agent retrieves as context (versioned here)
+│   ├── scripts/             # ingest_knowledge.py and other one-off tools
+│   ├── data/                # persistent volume: SQLite, uploads, caches (git-ignored)
 │   ├── requirements.txt
 │   ├── assets/
 │   │   └── watermark.png
@@ -95,6 +104,47 @@ npm run dev
 ```
 
 Frontend runs on `http://localhost:5173` and proxies API calls to the backend.
+
+## Knowledge base
+
+What the agent knows beyond the model lives in `backend/knowledge/*.md`, one
+file per topic. Retrieval hands the model single chunks (about 500
+characters, split at blank lines), so write each section to stand on its
+own: a heading directly followed by its paragraph, no blank line between,
+and say in the paragraph what it is about.
+
+Ingest against the deployed server (that is where the Qdrant and Gemini
+credentials are):
+
+```bash
+cd backend
+ADMIN_TOKEN=... python scripts/ingest_knowledge.py            # every file
+ADMIN_TOKEN=... python scripts/ingest_knowledge.py knowledge/one-file.md
+```
+
+Re-running after an edit replaces that file's chunks; nothing stale stays
+retrievable. `API_BASE` overrides the target server.
+
+## Admin endpoints
+
+All take `Authorization: Bearer $ADMIN_TOKEN`.
+
+| Endpoint | What it does |
+|----------|--------------|
+| `POST /api/ingest/file` | Ingest one text/markdown file (what the script above calls) |
+| `POST /api/ingest/text` | Ingest a raw string |
+| `GET/PUT/DELETE /api/admin/community-art[/{id}]` | Review uploads; `PUT` takes `status`, `label` and optionally `has_branding` |
+| `POST /api/admin/community-art/relabel` | Name every piece from its picture (`?only_missing=true` for unnamed ones) |
+| `POST /api/admin/community-art/detect-branding` | Decide for each piece whether it already carries Pepecoin branding, so it is served without the watermark. Run once after deploying; `?only_unknown=false` re-judges everything |
+
+## Pictures and the watermark
+
+Every picture the chat shows goes through `GET /api/watermark?url=…` or
+`?path=…` and carries the Professor Pepe mark. The same route with
+`&watermark=false` returns the untouched file; that is what the *Original*
+download button requests. Both variants are cached on the volume.
+Exceptions that are served as they are: video clips, and community art the
+vision model (or an admin) marked as already branded.
 
 ## Custom domain
 

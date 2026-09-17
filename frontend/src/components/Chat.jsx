@@ -401,7 +401,9 @@ export default function Chat({ isDark }) {
       const intent = await intentPromise
       const wantsSearchPicker = Boolean(intent?.wants_image)
       if (wantsSearchPicker) {
-        trackEvent('image_search', { message: sendText, search: intent.search || '' })
+        // The extracted term rides in `command`: it is what was actually run,
+        // and the event schema has no field of its own for it.
+        trackEvent('image_search', { message: sendText, command: intent.search || 'random' })
       }
 
       setMessages((prev) => [

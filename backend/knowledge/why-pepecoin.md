@@ -35,9 +35,9 @@ welcome and common.
 ## The Xeggex rug pull, and how the community handled it
 Community explanation of Pepecoin (PEP): the community proved itself when
 Xeggex, at the time PEP's major exchange, was rug-pulled by its owner.
-Community members organised and managed to get a large part of the
-community's funds back. It is told as a story of resilience, not of the
-exchange: PEP itself was never at risk, only the funds held on Xeggex.
+Some community members organised and managed to get the community's
+funds back. It is told as a story of resilience, not of the exchange:
+PEP itself was never at risk, only the funds held on Xeggex.
 
 ## Wallets cannot be frozen
 Community explanation of Pepecoin (PEP): a PEP wallet cannot be frozen or

@@ -396,9 +396,7 @@ async def fetch_image(req: ImageRequest, request: Request):
     """Fetch an image from the OnlyPepes API using keywords/tags."""
     pepe = await fetch_onlypepes_image(http, req.topic, req.context)
     external_url = pepe.get("url")
-    watermarked_url = build_watermarked_url(
-        str(request.base_url), external_url, None, watermark=req.watermark
-    )
+    watermarked_url = build_watermarked_url(str(request.base_url), external_url, None)
     return {
         "url": watermarked_url,
         "description": pepe.get("description", ""),
@@ -426,9 +424,7 @@ async def fetch_images(req: ImageRequest, request: Request):
                 # The index has no stable id of its own, so the image URL is
                 # what identifies a candidate in the picker.
                 "id": pepe.get("url") or index,
-                "url": build_watermarked_url(
-                    str(request.base_url), pepe.get("url"), None, watermark=req.watermark
-                ),
+                "url": build_watermarked_url(str(request.base_url), pepe.get("url"), None),
                 "description": pepe.get("description", ""),
                 "tags": pepe.get("tags") or [],
             }
@@ -539,12 +535,9 @@ async def fetch_rare_pepe(req: RarePepeRequest, request: Request):
         url = (
             f"{request.base_url}api/watermark?path=/rare/"
             f"{quote(local.name, safe='')}"
-            f"{'' if req.watermark else '&watermark=false'}"
         )
     else:
-        url = build_watermarked_url(
-            str(request.base_url), external_url, filename, watermark=req.watermark
-        )
+        url = build_watermarked_url(str(request.base_url), external_url, filename)
 
     description = pepe.get("description", "")
     explanation = pepe.get("explanation", "")
@@ -912,22 +905,19 @@ async def delete_community_art(art_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Art not found")
     return {"status": "deleted"}
 
-def _community_art_url(request: Request, piece: dict, watermark: bool = True) -> str:
+def _community_art_url(request: Request, piece: dict) -> str:
     """
     Public URL for a piece.
 
     Clips stream directly. Stills and GIFs get the watermark unless the
     picture already carries Pepecoin branding — a logo on top of a logo
-    reads as clutter, not as attribution — or the caller asked for the
-    original. Unknown (never checked) counts as unbranded, so the older
-    library keeps its watermark until the backfill has looked at it.
+    reads as clutter, not as attribution. Unknown (never checked) counts as
+    unbranded, so the older library keeps its watermark until the backfill
+    has looked at it. Saving the original is the client's call, made by
+    appending `&watermark=false` to the proxied URL.
     """
     filename = str(piece["filename"])
-    if (
-        filename.lower().endswith((".mp4", ".webm"))
-        or piece.get("has_branding")
-        or not watermark
-    ):
+    if filename.lower().endswith((".mp4", ".webm")) or piece.get("has_branding"):
         return f"{request.base_url}community/{filename}"
     return f"{request.base_url}api/watermark?path=/community/{filename}"
 
@@ -938,7 +928,6 @@ async def suggest_community_art(
     text: str = "",
     limit: int = 4,
     media: Optional[str] = None,
-    watermark: bool = True,
 ):
     """
     Shortlist community art that fits a generated post.
@@ -965,7 +954,7 @@ async def suggest_community_art(
         # it counts as shown. The sequence is left alone: several pieces at
         # once have no meaningful "last shown" among them.
         record_impression(int(piece["id"]), sequence=False)
-        piece["url"] = _community_art_url(request, piece, watermark=watermark)
+        piece["url"] = _community_art_url(request, piece)
         piece.pop("filename", None)
         piece.pop("has_branding", None)
 
@@ -983,10 +972,6 @@ async def get_random_community_art(
     label: Optional[str] = None,
     media: Optional[str] = None,
     q: Optional[str] = None,
-    # The art is the community's own; whoever asks for it can have the
-    # original. The watermark stays the default because it is what a piece
-    # reposted from the chat should carry.
-    watermark: bool = True,
 ):
     from services.art_service import MEDIA_TYPES, get_random_art, record_impression
 
@@ -1006,7 +991,7 @@ async def get_random_community_art(
         )
 
     record_impression(int(art["id"]))
-    url = _community_art_url(request, art, watermark=watermark)
+    url = _community_art_url(request, art)
 
     # The id travels with the response so a thumbs rating on the message can be
     # credited back to this piece; without it the rating was recorded against
