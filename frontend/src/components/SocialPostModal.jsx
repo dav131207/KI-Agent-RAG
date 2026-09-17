@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Command, Globe, MessageSquare, Hash, ArrowRight, CornerDownLeft, Target, Image as ImageIcon } from 'lucide-react'
 
@@ -176,7 +177,10 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
     exit: { opacity: 0, scale: 0.98, y: 10, transition: { duration: 0.15 } }
   }
 
-  return (
+  // Into document.body: inside the chat the dialog sits in the message
+  // area's z-10 stacking context, under the z-30 header, which painted over
+  // its title bar on a phone.
+  return createPortal(
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -279,6 +283,7 @@ export default function SocialPostModal({ isOpen, onClose, onSubmit, isDark }) {
           )}
         </motion.div>
       </motion.div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }

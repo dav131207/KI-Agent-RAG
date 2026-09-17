@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import ShortlistPicker from './ShortlistPicker'
-import { getWatermark } from '../lib/watermark'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -26,12 +25,7 @@ export default function PepePicker({ topic, text, search = false }) {
       headers: { 'Content-Type': 'application/json' },
       // A search ranks against its own term. The chat reply would otherwise
       // do the ranking, and it talks about the request, not the picture.
-      body: JSON.stringify({
-        topic,
-        context: search ? topic : text,
-        count: 4,
-        watermark: getWatermark(),
-      }),
+      body: JSON.stringify({ topic, context: search ? topic : text, count: 4 }),
     })
       .then((res) => (res.ok ? res.json() : { images: [] }))
       .then((data) => {

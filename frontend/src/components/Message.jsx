@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import DownloadMenu from './DownloadMenu'
 import EmotePicker from './EmotePicker'
 import CommunityArtPicker from './CommunityArtPicker'
 import PepePicker from './PepePicker'
@@ -175,15 +176,20 @@ export default function Message({ msg, isDark, userMessage, ragChunks, ragChunkI
                 The image could not be loaded — its host is not responding.
               </p>
             ) : (
-              <motion.img
-                initial={{ opacity: 0, scale: 0.96 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.4 }}
-                src={msg.image}
-                alt="Generated visual"
-                onError={() => setImageFailed(true)}
-                className="mb-2 sm:mb-3 rounded-xl max-w-full max-h-48 sm:max-h-56 md:max-h-64 h-auto w-auto mx-auto shadow-sm"
-              />
+              <div className="mb-2 sm:mb-3">
+                <motion.img
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.4 }}
+                  src={msg.image}
+                  alt="Generated visual"
+                  onError={() => setImageFailed(true)}
+                  className="rounded-xl max-w-full max-h-48 sm:max-h-56 md:max-h-64 h-auto w-auto mx-auto shadow-sm"
+                />
+                {/* Saving is where the watermark question is asked, one
+                    picture at a time; on screen it always carries the mark. */}
+                <DownloadMenu url={msg.image} baseName="pepe" className="justify-center mt-1.5" />
+              </div>
             )
           )}
           {msg.text && (

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Image as ImageIcon, Shuffle, Search } from 'lucide-react'
 
@@ -55,7 +56,10 @@ export default function CommunityArtModal({ isOpen, onClose, onSubmit, isDark })
     .filter((l) => (media ? (l.media?.[media] || 0) > 0 : l.count > 0))
     .slice(0, 6)
 
-  return (
+  // Into document.body: inside the chat the dialog sits in the message
+  // area's z-10 stacking context, under the z-30 header, which painted over
+  // its title bar on a phone.
+  return createPortal(
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -142,6 +146,7 @@ export default function CommunityArtModal({ isOpen, onClose, onSubmit, isDark })
           </div>
         </motion.div>
       </motion.div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }

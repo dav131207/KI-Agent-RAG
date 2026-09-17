@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Loader2, X } from 'lucide-react'
+import DownloadMenu from './DownloadMenu'
 
 /**
  * Fullscreen viewer for any picture in the chat.
@@ -71,7 +72,7 @@ export default function ImageModal({ src, onClose }) {
             exit={{ scale: 0.95, opacity: 0 }}
             transition={{ duration: 0.15 }}
             onClick={(e) => e.stopPropagation()}
-            className="relative flex items-center justify-center max-w-full max-h-full"
+            className="relative flex flex-col items-center justify-center gap-3 max-w-full max-h-full"
           >
             {!loaded && !failed && (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -93,8 +94,9 @@ export default function ImageModal({ src, onClose }) {
                 }`}
                 style={{
                   // Both axes come from the viewport. The frame's own padding
-                  // is subtracted so the corners never touch the screen edge.
-                  maxHeight: 'calc(100dvh - 4rem)',
+                  // and the download bar below are subtracted so the corners
+                  // never touch the screen edge.
+                  maxHeight: 'calc(100dvh - 8rem)',
                   maxWidth: 'calc(100vw - 2rem)',
                   // Keeps the spinner's frame from collapsing to nothing
                   // while the bytes are still on their way.
@@ -103,6 +105,9 @@ export default function ImageModal({ src, onClose }) {
                 }}
                 draggable={false}
               />
+            )}
+            {loaded && !failed && (
+              <DownloadMenu url={src} baseName="pepe" size="lg" className="justify-center" />
             )}
           </motion.div>
         </motion.div>

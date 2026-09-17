@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import ShortlistPicker from './ShortlistPicker'
-import { getWatermark } from '../lib/watermark'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -42,10 +41,7 @@ export default function CommunityArtPicker({ text }) {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    fetch(
-      `${API_BASE}/api/community-art/suggest?text=${encodeURIComponent(text || '')}&limit=4` +
-        (getWatermark() ? '' : '&watermark=false'),
-    )
+    fetch(`${API_BASE}/api/community-art/suggest?text=${encodeURIComponent(text || '')}&limit=4`)
       .then((res) => (res.ok ? res.json() : { art: [] }))
       .then((data) => {
         if (cancelled) return
