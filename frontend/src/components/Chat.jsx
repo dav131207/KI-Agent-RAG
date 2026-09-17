@@ -340,8 +340,14 @@ export default function Chat({ isDark }) {
       let imageUrl = null
       // A social post's image is fetched after generation instead, so the
       // finished text can rank the candidates; a plain picture request gets
-      // its shortlist the same way. Only the chain card is resolved up front.
-      if (wantsChainCard) {
+      // its shortlist the same way. Only the chain card and the Random Pepe
+      // command are resolved up front.
+      if (commandId === 'meme') {
+        // One random picture, as the button promises. It used to ride on the
+        // word "meme" in its prompt matching the old picture gate; commands
+        // skip the intent call, so it asks for its picture outright.
+        imageUrl = await fetchImage('random meme')
+      } else if (wantsChainCard) {
         // The card 503s when the explorer is down; probe the JSON endpoint
         // first (same 60s cache, no image rendering) so a dead explorer leaves
         // no broken image in the chat.
@@ -442,6 +448,21 @@ export default function Chat({ isDark }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      return data.url || null
+    } catch {
+      return null
+    }
+  }
+
+  const fetchImage = async (search) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: search, watermark: getWatermark() }),
       })
       if (!res.ok) return null
       const data = await res.json()

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Loader2, X } from 'lucide-react'
 
@@ -10,6 +11,12 @@ import { Loader2, X } from 'lucide-react'
  * and the close button sat 40px above the frame, which on a tall picture was
  * off the top of the screen. The watermark route can take seconds for a
  * large file, so the frame shows it is waiting instead of staying black.
+ *
+ * Rendered into document.body. Inside the chat it sat in the message area's
+ * own stacking context (z-10), where no z-index can climb past the header
+ * (z-30) in the layer above: the header painted over the top of every
+ * picture and over the close button, so a tall picture looked cut off and
+ * could not be closed by the button.
  */
 export default function ImageModal({ src, onClose }) {
   const [loaded, setLoaded] = useState(false)
@@ -29,7 +36,7 @@ export default function ImageModal({ src, onClose }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [src, onClose])
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {src && (
         <motion.div
@@ -87,8 +94,8 @@ export default function ImageModal({ src, onClose }) {
                 style={{
                   // Both axes come from the viewport. The frame's own padding
                   // is subtracted so the corners never touch the screen edge.
-                  maxHeight: 'calc(100dvh - 3rem)',
-                  maxWidth: 'calc(100vw - 1.5rem)',
+                  maxHeight: 'calc(100dvh - 4rem)',
+                  maxWidth: 'calc(100vw - 2rem)',
                   // Keeps the spinner's frame from collapsing to nothing
                   // while the bytes are still on their way.
                   minWidth: loaded ? undefined : '8rem',
@@ -100,6 +107,7 @@ export default function ImageModal({ src, onClose }) {
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }
