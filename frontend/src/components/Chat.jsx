@@ -67,7 +67,7 @@ export default function Chat({ isDark }) {
     handleSubmit(null, { id: 'social', display: labels['social'], send: prompt, visual })
   }
 
-  const handleArtSubmit = async (wanted, media) => {
+  const handleArtSubmit = async (wanted, media, watermark = true) => {
     setIsArtModalOpen(false)
     setLoading(true)
     const MEDIA_WORDS = { image: 'an image', gif: 'a GIF', video: 'a video' }
@@ -82,6 +82,7 @@ export default function Chat({ isDark }) {
       const query = new URLSearchParams()
       if (wanted) query.set('q', wanted)
       if (media) query.set('media', media)
+      if (!watermark) query.set('watermark', 'false')
       const res = await fetch(`${API_BASE}/api/community-art/random?${query}`)
       if (!res.ok) {
         const detail = await res.json().catch(() => null)

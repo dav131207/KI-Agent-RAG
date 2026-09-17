@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Image as ImageIcon, Shuffle, Search } from 'lucide-react'
+import { Image as ImageIcon, Shuffle, Search, Stamp } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -21,11 +21,34 @@ const MEDIA_FILTERS = [
  * turns a "show me something" command into a directory. You describe what you
  * are after instead — or nothing at all — and get a single piece back.
  */
+const WATERMARK_PREF = 'communityArt.watermark'
+
+// Remembered per browser: someone who wants the originals wants them every
+// time, and re-flipping the switch on each draw would be the whole dialog.
+function readWatermarkPref() {
+  try {
+    return localStorage.getItem(WATERMARK_PREF) !== 'off'
+  } catch {
+    return true
+  }
+}
+
 export default function CommunityArtModal({ isOpen, onClose, onSubmit, isDark }) {
   const [labels, setLabels] = useState([])
   const [query, setQuery] = useState('')
   const [media, setMedia] = useState(null)
+  const [watermark, setWatermark] = useState(readWatermarkPref)
   const inputRef = useRef(null)
+
+  const toggleWatermark = () => {
+    const next = !watermark
+    setWatermark(next)
+    try {
+      localStorage.setItem(WATERMARK_PREF, next ? 'on' : 'off')
+    } catch {
+      // Storage can be unavailable; the switch still works for this draw.
+    }
+  }
 
   useEffect(() => {
     if (isOpen) {
@@ -42,7 +65,7 @@ export default function CommunityArtModal({ isOpen, onClose, onSubmit, isDark })
 
   if (!isOpen) return null
 
-  const submit = () => onSubmit(query.trim(), media)
+  const submit = () => onSubmit(query.trim(), media, watermark)
 
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') onClose()
@@ -130,6 +153,32 @@ export default function CommunityArtModal({ isOpen, onClose, onSubmit, isDark })
                   </button>
                 ))}
               </div>
+            )}
+
+            {/* Videos never carry the watermark, so the switch would be a
+                lie with that filter on. */}
+            {media !== 'video' && (
+              <label className="flex items-center justify-between gap-3 cursor-pointer select-none">
+                <span className={`flex items-center gap-2 text-xs ${isDark ? 'text-brand-300' : 'text-brand-600'}`}>
+                  <Stamp size={14} className={watermark ? 'text-accent' : 'opacity-50'} />
+                  Professor Pepe watermark
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={watermark}
+                  onClick={toggleWatermark}
+                  className={`relative shrink-0 w-10 h-6 rounded-full transition-colors ${
+                    watermark ? 'bg-accent' : isDark ? 'bg-white/15' : 'bg-brand-200'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                      watermark ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </label>
             )}
 
             <button

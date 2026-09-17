@@ -896,18 +896,22 @@ async def delete_community_art(art_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Art not found")
     return {"status": "deleted"}
 
-def _community_art_url(request: Request, piece: dict) -> str:
+def _community_art_url(request: Request, piece: dict, watermark: bool = True) -> str:
     """
     Public URL for a piece.
 
     Clips stream directly. Stills and GIFs get the watermark unless the
     picture already carries Pepecoin branding — a logo on top of a logo
-    reads as clutter, not as attribution. Unknown (never checked) counts as
-    unbranded, so the older library keeps its watermark until the backfill
-    has looked at it.
+    reads as clutter, not as attribution — or the caller asked for the
+    original. Unknown (never checked) counts as unbranded, so the older
+    library keeps its watermark until the backfill has looked at it.
     """
     filename = str(piece["filename"])
-    if filename.lower().endswith((".mp4", ".webm")) or piece.get("has_branding"):
+    if (
+        filename.lower().endswith((".mp4", ".webm"))
+        or piece.get("has_branding")
+        or not watermark
+    ):
         return f"{request.base_url}community/{filename}"
     return f"{request.base_url}api/watermark?path=/community/{filename}"
 
@@ -959,6 +963,10 @@ async def get_random_community_art(
     label: Optional[str] = None,
     media: Optional[str] = None,
     q: Optional[str] = None,
+    # The art is the community's own; whoever asks for it can have the
+    # original. The watermark stays the default because it is what a piece
+    # reposted from the chat should carry.
+    watermark: bool = True,
 ):
     from services.art_service import MEDIA_TYPES, get_random_art, record_impression
 
@@ -978,7 +986,7 @@ async def get_random_community_art(
         )
 
     record_impression(int(art["id"]))
-    url = _community_art_url(request, art)
+    url = _community_art_url(request, art, watermark=watermark)
 
     # The id travels with the response so a thumbs rating on the message can be
     # credited back to this piece; without it the rating was recorded against
