@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Loader2, Paperclip } from 'lucide-react'
+import { Send, Loader2, Paperclip, Stamp } from 'lucide-react'
 import Message from './Message'
 import ImageModal from './ImageModal'
 import SocialPostModal from './SocialPostModal'
@@ -8,6 +8,7 @@ import UploadModal from './UploadModal'
 import CommunityArtModal from './CommunityArtModal'
 import { DEFAULT_LABELS, getLabels } from '../lib/commandLabels'
 import { measureLatency, trackEvent } from '../lib/analytics'
+import { getWatermark, useWatermark } from '../lib/watermark'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -22,6 +23,7 @@ const COMMANDS = [
 export default function Chat({ isDark }) {
   const [language, setLanguage] = useState('English')
   const labels = getLabels(language)
+  const [watermark, setWatermark] = useWatermark()
 
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -67,7 +69,7 @@ export default function Chat({ isDark }) {
     handleSubmit(null, { id: 'social', display: labels['social'], send: prompt, visual })
   }
 
-  const handleArtSubmit = async (wanted, media, watermark = true) => {
+  const handleArtSubmit = async (wanted, media) => {
     setIsArtModalOpen(false)
     setLoading(true)
     const MEDIA_WORDS = { image: 'an image', gif: 'a GIF', video: 'a video' }
@@ -82,7 +84,7 @@ export default function Chat({ isDark }) {
       const query = new URLSearchParams()
       if (wanted) query.set('q', wanted)
       if (media) query.set('media', media)
-      if (!watermark) query.set('watermark', 'false')
+      if (!getWatermark()) query.set('watermark', 'false')
       const res = await fetch(`${API_BASE}/api/community-art/random?${query}`)
       if (!res.ok) {
         const detail = await res.json().catch(() => null)
@@ -461,7 +463,7 @@ export default function Chat({ isDark }) {
     const res = await fetch(`${API_BASE}/api/rare_pepe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, history }),
+      body: JSON.stringify({ query, history, watermark: getWatermark() }),
     })
     if (!res.ok) throw new Error('No rare pepe found')
     return res.json()
@@ -612,6 +614,29 @@ export default function Chat({ isDark }) {
               aria-label="Upload Art"
             >
               <Paperclip size={18} />
+            </button>
+            {/* The watermark switch for every picture the chat hands out.
+                Applies from the next picture on; what is already on screen
+                stays as it was served. */}
+            <button
+              type="button"
+              onClick={() => setWatermark(!watermark)}
+              role="switch"
+              aria-checked={watermark}
+              aria-label={watermark ? 'Watermark on — click to serve pictures without it' : 'Watermark off — click to add it again'}
+              title={watermark ? 'Watermark: on' : 'Watermark: off'}
+              className={`relative p-2 sm:p-2.5 rounded-full transition-colors ${
+                watermark
+                  ? 'text-accent bg-accent/10 hover:bg-accent/20'
+                  : 'text-brand-500 hover:text-brand-300 hover:bg-white/5'
+              }`}
+            >
+              <Stamp size={18} />
+              {!watermark && (
+                <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <span className="block w-6 h-0.5 rotate-45 bg-current rounded-full" />
+                </span>
+              )}
             </button>
             <input
               type="text"

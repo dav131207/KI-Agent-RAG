@@ -53,6 +53,7 @@ from services.image_service import (
     extract_image_search_term,
     fetch_onlypepes_candidates,
     fetch_onlypepes_image,
+    passthrough_image_bytes,
     get_watermark,
     read_cached,
     validate_memes_path,
@@ -395,7 +396,9 @@ async def fetch_image(req: ImageRequest, request: Request):
     """Fetch an image from the OnlyPepes API using keywords/tags."""
     pepe = await fetch_onlypepes_image(http, req.topic, req.context)
     external_url = pepe.get("url")
-    watermarked_url = build_watermarked_url(str(request.base_url), external_url, None)
+    watermarked_url = build_watermarked_url(
+        str(request.base_url), external_url, None, watermark=req.watermark
+    )
     return {
         "url": watermarked_url,
         "description": pepe.get("description", ""),
@@ -423,7 +426,9 @@ async def fetch_images(req: ImageRequest, request: Request):
                 # The index has no stable id of its own, so the image URL is
                 # what identifies a candidate in the picker.
                 "id": pepe.get("url") or index,
-                "url": build_watermarked_url(str(request.base_url), pepe.get("url"), None),
+                "url": build_watermarked_url(
+                    str(request.base_url), pepe.get("url"), None, watermark=req.watermark
+                ),
                 "description": pepe.get("description", ""),
                 "tags": pepe.get("tags") or [],
             }
@@ -534,9 +539,12 @@ async def fetch_rare_pepe(req: RarePepeRequest, request: Request):
         url = (
             f"{request.base_url}api/watermark?path=/rare/"
             f"{quote(local.name, safe='')}"
+            f"{'' if req.watermark else '&watermark=false'}"
         )
     else:
-        url = build_watermarked_url(str(request.base_url), external_url, filename)
+        url = build_watermarked_url(
+            str(request.base_url), external_url, filename, watermark=req.watermark
+        )
 
     description = pepe.get("description", "")
     explanation = pepe.get("explanation", "")
@@ -628,13 +636,19 @@ async def chain_stats_image(metric: Optional[str] = None):
 
 
 @router.get("/watermark")
-async def watermark_proxy(url: Optional[str] = None, path: Optional[str] = None):
-    """Fetch an external or local image, burn in the watermark and return it."""
+async def watermark_proxy(
+    url: Optional[str] = None, path: Optional[str] = None, watermark: bool = True
+):
+    """
+    Fetch an external or local image, burn in the watermark and return it.
+
+    `watermark=false` returns the picture untouched, through the same proxy
+    and cache, for a viewer who switched the mark off.
+    """
     if not url and not path:
         raise HTTPException(status_code=400, detail="Provide url or path")
 
-    watermark = get_watermark()
-    if watermark is None:
+    if watermark and get_watermark() is None:
         raise HTTPException(status_code=503, detail="Watermark not configured")
 
     if url:
@@ -651,7 +665,7 @@ async def watermark_proxy(url: Optional[str] = None, path: Optional[str] = None)
     # by archive.org extracting each file from a 183 MB zip on demand, which is
     # slow when it works and unreachable when it does not; a picture that
     # loaded once should never depend on that host again.
-    cached = read_cached(cache_key)
+    cached = read_cached(cache_key if watermark else f"{cache_key}:raw")
     if cached:
         return StreamingResponse(BytesIO(cached[0]), media_type=cached[1])
 
@@ -673,7 +687,9 @@ async def watermark_proxy(url: Optional[str] = None, path: Optional[str] = None)
         # Per-frame watermarking of an animation is CPU-bound; on the event
         # loop it would stall every other request for its duration.
         result, media_type = await asyncio.to_thread(
-            watermark_image_bytes, data, cache_key
+            watermark_image_bytes if watermark else passthrough_image_bytes,
+            data,
+            cache_key,
         )
         return StreamingResponse(BytesIO(result), media_type=media_type)
     except Exception as e:
@@ -918,7 +934,11 @@ def _community_art_url(request: Request, piece: dict, watermark: bool = True) ->
 
 @router.get("/community-art/suggest")
 async def suggest_community_art(
-    request: Request, text: str = "", limit: int = 4, media: Optional[str] = None
+    request: Request,
+    text: str = "",
+    limit: int = 4,
+    media: Optional[str] = None,
+    watermark: bool = True,
 ):
     """
     Shortlist community art that fits a generated post.
@@ -945,7 +965,7 @@ async def suggest_community_art(
         # it counts as shown. The sequence is left alone: several pieces at
         # once have no meaningful "last shown" among them.
         record_impression(int(piece["id"]), sequence=False)
-        piece["url"] = _community_art_url(request, piece)
+        piece["url"] = _community_art_url(request, piece, watermark=watermark)
         piece.pop("filename", None)
         piece.pop("has_branding", None)
 

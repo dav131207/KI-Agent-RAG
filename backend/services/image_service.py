@@ -340,12 +340,41 @@ async def fetch_onlypepes_image(
     return candidates[0]
 
 
-def build_watermarked_url(base_url: str, external_url: Optional[str], filename: Optional[str]) -> Optional[str]:
-    """Build a watermarked image URL for an external or local image."""
+def passthrough_image_bytes(
+    data: bytes, cache_key: Optional[str] = None
+) -> tuple[bytes, str]:
+    """
+    The picture as it is, with its media type, for a viewer who turned the
+    watermark off. Still served through the proxy rather than by handing out
+    the source URL: the rare pepe archive is slow and often unreachable, and
+    a download from another origin is refused by the browser anyway.
+    """
+    key = f"{cache_key or hashlib.blake2b(data, digest_size=16).hexdigest()}:raw"
+    cached = read_cached(key)
+    if cached:
+        return cached
+
+    try:
+        image = Image.open(BytesIO(data))
+        media_type = Image.MIME.get(image.format or "", "application/octet-stream")
+    except Exception:
+        media_type = "application/octet-stream"
+    write_cached(key, data, media_type)
+    return data, media_type
+
+
+def build_watermarked_url(
+    base_url: str,
+    external_url: Optional[str],
+    filename: Optional[str],
+    watermark: bool = True,
+) -> Optional[str]:
+    """Build a proxied image URL for an external or local image, watermarked unless told otherwise."""
+    suffix = "" if watermark else "&watermark=false"
     if external_url:
-        return f"{base_url}api/watermark?url={quote(external_url, safe='')}"
+        return f"{base_url}api/watermark?url={quote(external_url, safe='')}{suffix}"
     if filename and MEMES_DIR and MEMES_DIR.is_dir():
-        return f"{base_url}api/watermark?path=/memes/{quote(filename, safe='')}"
+        return f"{base_url}api/watermark?path=/memes/{quote(filename, safe='')}{suffix}"
     return None
 
 

@@ -22,6 +22,9 @@ class ImageRequest(BaseModel):
     count: Optional[int] = Field(
         default=None, description="How many candidates to shortlist (/images only)"
     )
+    watermark: bool = Field(
+        default=True, description="Serve with the Professor Pepe watermark (the default) or as is"
+    )
 
 
 class ImageIntentRequest(BaseModel):
@@ -40,6 +43,9 @@ class RarePepeRequest(BaseModel):
     query: Optional[str] = Field(
         default="rare pepe",
         description="Search term for the rare pepe collection",
+    )
+    watermark: bool = Field(
+        default=True, description="Serve with the Professor Pepe watermark (the default) or as is"
     )
     language: Optional[str] = Field(
         default=None,
