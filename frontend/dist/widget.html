@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Professor Pepe — website widget</title>
+  <link rel="icon" type="image/png" href="/logo.png">
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; background: #0f1412; color: #e6ebe8; font: 16px/1.55 Nunito, system-ui, -apple-system, Segoe UI, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 48px 20px 160px; }
+    h1 { font-size: 2rem; margin: 0 0 .25rem; letter-spacing: -.01em; }
+    h1 span { color: #269a4c; }
+    h2 { font-size: 1.15rem; margin: 2.5rem 0 .75rem; }
+    p.lead { color: #a7b3ac; margin-top: 0; }
+    pre { background: #0a0f0c; border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 14px 16px; overflow-x: auto; font-size: 13.5px; line-height: 1.5; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.08); vertical-align: top; }
+    th { color: #a7b3ac; font-weight: 600; }
+    td code { color: #8fd3a3; }
+    .hint { color: #a7b3ac; font-size: 14px; }
+    .logo { width: 72px; height: 72px; object-fit: contain; margin-bottom: 12px; }
+    .btn { display: inline-block; margin-top: 8px; padding: 9px 16px; border-radius: 999px; background: rgba(38,154,76,.15); border: 1px solid rgba(38,154,76,.4); color: #8fd3a3; font-weight: 700; text-decoration: none; cursor: pointer; font-size: 14px; }
+    #professor-pepe { margin-top: 12px; }
+  </style>
+</head>
+<body>
+<main>
+  <img class="logo" src="/logo.png" alt="">
+  <h1>Put <span>Professor Pepe</span> on your website</h1>
+  <p class="lead">One script tag gives your visitors the Pepecoin community assistant: chat, memes, rare pepes, community art and social-post drafting. Nothing to install, nothing to host — it runs from here.</p>
+
+  <h2>Floating chat button</h2>
+  <p>Paste this just before <code>&lt;/body&gt;</code>. A Pepe button appears in the bottom-right corner; clicking it opens the chat. Try it — the button on this page is exactly that.</p>
+  <pre><code id="snippet-floating"></code></pre>
+  <button class="btn" onclick="ProfessorPepe.open()">Open the chat</button>
+
+  <h2>Inline, inside your page</h2>
+  <p>Give it a container and it fills that instead of floating:</p>
+  <pre><code id="snippet-inline"></code></pre>
+
+  <h2>Options</h2>
+  <p class="hint">All go on the script tag as <code>data-</code> attributes and are optional.</p>
+  <table>
+    <tr><th>Attribute</th><th>Values</th><th>What it does</th></tr>
+    <tr><td><code>data-mode</code></td><td><code>floating</code> (default), <code>inline</code></td><td>Floating button, or fill a container</td></tr>
+    <tr><td><code>data-target</code></td><td>CSS selector</td><td>Inline only: the container (default <code>#professor-pepe</code>)</td></tr>
+    <tr><td><code>data-height</code></td><td>pixels</td><td>Inline only: height of the chat (default 600)</td></tr>
+    <tr><td><code>data-position</code></td><td><code>right</code> (default), <code>left</code></td><td>Floating only: which corner</td></tr>
+    <tr><td><code>data-color</code></td><td>any CSS colour</td><td>Launcher button colour</td></tr>
+    <tr><td><code>data-open</code></td><td><code>true</code></td><td>Floating only: start with the chat open</td></tr>
+  </table>
+  <p class="hint">From your own scripts: <code>ProfessorPepe.open()</code>, <code>ProfessorPepe.close()</code>, <code>ProfessorPepe.toggle()</code>.</p>
+
+  <h2>Good to know</h2>
+  <ul class="hint">
+    <li>The chat runs in an iframe from this domain. It cannot read your page, and it cannot break your page's styles.</li>
+    <li>Works on phones: the floating panel goes full-screen below 480px.</li>
+    <li>Every picture is served with the Professor Pepe watermark; your visitors can save the original from the download buttons.</li>
+    <li>Questions or a feature you need for your site? Come to the Pepecoin Discord.</li>
+  </ul>
+</main>
+
+<script>
+  var origin = location.origin
+  document.getElementById('snippet-floating').textContent =
+    '<script src="' + origin + '/widget.js"><\/script>'
+  document.getElementById('snippet-inline').textContent =
+    '<div id="professor-pepe"></div>\n' +
+    '<script src="' + origin + '/widget.js" data-mode="inline" data-height="600"><\/script>'
+</script>
+<script src="/widget.js"></script>
+</body>
+</html>

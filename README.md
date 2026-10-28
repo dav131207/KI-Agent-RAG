@@ -137,6 +137,35 @@ All take `Authorization: Bearer $ADMIN_TOKEN`.
 | `POST /api/admin/community-art/relabel` | Name every piece from its picture (`?only_missing=true` for unnamed ones) |
 | `POST /api/admin/community-art/detect-branding` | Decide for each piece whether it already carries Pepecoin branding, so it is served without the watermark. Run once after deploying; `?only_unknown=false` re-judges everything |
 
+## Website widget
+
+Anyone can put Professor Pepe on their own site with one script tag; the
+page at `/widget.html` on the deployment explains it with live examples.
+
+```html
+<script src="https://professor-pepe-agent.onrender.com/widget.js"></script>
+```
+
+That gives a floating Pepe button in the corner that opens the chat. For
+the chat inside the page instead, add a container and `data-mode="inline"`:
+
+```html
+<div id="professor-pepe"></div>
+<script src="https://professor-pepe-agent.onrender.com/widget.js" data-mode="inline" data-height="600"></script>
+```
+
+Options are `data-` attributes on the script tag: `data-position`
+(`right`/`left`), `data-color`, `data-open="true"`, `data-target` and
+`data-height` for inline. `window.ProfessorPepe.open()/close()/toggle()`
+drive it from the host page's own scripts.
+
+How it works: `widget.js` (in `frontend/public/`) injects an iframe that
+loads the app with `?embed=1`. In that mode `App.jsx` drops the splash,
+the particles and the install banner and shows a slim header with a link
+to the full app; everything else — pickers, dialogs, downloads — is the
+chat as it is. The iframe keeps the host page and the chat apart in both
+directions, and the frame is only fetched when someone opens it.
+
 ## Pictures and the watermark
 
 Every picture the chat shows goes through `GET /api/watermark?url=…` or

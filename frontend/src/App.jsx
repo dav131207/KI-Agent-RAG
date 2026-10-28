@@ -6,9 +6,16 @@ import Chat from './components/Chat'
 import MobileBanner from './components/MobileBanner'
 import ParticlesBackground from './components/ParticlesBackground'
 import { trackEvent } from './lib/analytics'
-import { HeartHandshake } from 'lucide-react'
+import { ExternalLink, HeartHandshake } from 'lucide-react'
 
 const SUPPORT_ADDRESS = 'PhzpSqdSiMRNQ6ksCEDs4ufJtFfuyLCU9j'
+
+// ?embed=1 is how widget.js loads the app inside an iframe on someone else's
+// site. The chat is the same; the shell around it is not: no splash, no
+// particles, no install banner (which also reads localStorage unguarded,
+// and Safari throws on that inside a third-party frame), and a slim header
+// with a way out to the full app. Read once — the frame never navigates.
+const EMBEDDED = new URLSearchParams(window.location.search).has('embed')
 
 function SupportModal({ isOpen, onClose }) {
   useEffect(() => {
@@ -59,7 +66,7 @@ function SupportModal({ isOpen, onClose }) {
 export default function App() {
   const { isDark } = useTheme()
   const [showSupport, setShowSupport] = useState(false)
-  const [showSplash, setShowSplash] = useState(true)
+  const [showSplash, setShowSplash] = useState(!EMBEDDED)
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 2000)
@@ -123,8 +130,8 @@ export default function App() {
           the header with it. dvh also tracks the mobile URL bar, which 100vh
           does not. Scrolling belongs to the message list, not the page. */}
       <div className={`h-[100dvh] overflow-hidden transition-colors duration-500 flex flex-col ${isDark ? 'bg-brand-900 text-brand-50' : 'bg-brand-50 text-brand-900'}`}>
-        <MobileBanner />
-        <ParticlesBackground isDark={isDark} />
+        {!EMBEDDED && <MobileBanner />}
+        {!EMBEDDED && <ParticlesBackground isDark={isDark} />}
         <div className="flex-1 flex overflow-hidden">
         {/* min-w-0: a flex item refuses to shrink below its content's minimum
             width unless told otherwise, and the command row inside is 748px
@@ -135,6 +142,31 @@ export default function App() {
         <main className="flex-1 min-w-0 flex flex-col relative">
           {/* sticky as a second line of defence: even if something below ever
               makes the page scroll, the hero stays pinned to the top. */}
+          {EMBEDDED ? (
+            <header className="shrink-0 z-30 flex items-center justify-between gap-2 px-3 py-2 bg-brand-950/60 backdrop-blur-xl border-b border-white/5">
+              <div className="flex items-center gap-2 min-w-0">
+                <img src="/logo.png" alt="" className="w-8 h-8 object-contain shrink-0" />
+                <div className="leading-tight min-w-0">
+                  <p className="text-sm font-black tracking-tight whitespace-nowrap">
+                    <span className="text-white">Professor</span> <span className="text-accent">Pepe</span>
+                  </p>
+                  <p className="text-[8px] tracking-[0.18em] text-brand-400 font-medium whitespace-nowrap">
+                    Pepecoin community assistant
+                  </p>
+                </div>
+              </div>
+              <a
+                href={`${window.location.origin}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 shrink-0 px-2.5 py-1.5 rounded-full text-[11px] font-bold bg-accent/10 text-accent hover:bg-accent/20 border border-accent/30 transition-colors"
+                title="Open the full app in a new tab"
+              >
+                <ExternalLink size={12} />
+                Open
+              </a>
+            </header>
+          ) : (
           <header className="sticky top-0 shrink-0 z-30 flex items-center justify-between md:grid md:grid-cols-[1fr_auto_1fr] gap-2 px-3 sm:px-4 md:px-6 py-2 bg-brand-800/70 dark:bg-brand-950/60 backdrop-blur-xl border-b border-brand-700/30 dark:border-white/5">
             <div className="hidden md:block" />
 
@@ -184,6 +216,7 @@ export default function App() {
               </button>
             </div>
           </header>
+          )}
 
           <SupportModal isOpen={showSupport} onClose={() => setShowSupport(false)} />
 

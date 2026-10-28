@@ -1,5 +1,10 @@
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
+// Held in memory as well as in the cookie. Inside the website widget the app
+// is a third-party iframe, where browsers drop the cookie write without a
+// word; without this every event in such a session carried a fresh id.
+let memorySessionId = null
+
 function getOrCreateSessionId() {
   const key = 'pepe_session'
   let sessionId = document.cookie
@@ -7,12 +12,15 @@ function getOrCreateSessionId() {
     .find((row) => row.startsWith(`${key}=`))
     ?.split('=')[1]
 
+  if (!sessionId) sessionId = memorySessionId
+
   if (!sessionId) {
     sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
     // 30 days, secure/same-site lax so it is sent with API requests.
     document.cookie = `${key}=${sessionId}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`
   }
 
+  memorySessionId = sessionId
   return sessionId
 }
 
