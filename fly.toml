@@ -7,10 +7,10 @@
 #
 # The persistent disk is a volume; create it once in the same region before
 # the first deploy (one machine, one volume):
-#   fly volumes create analytics_data --region fra --size 1
+#   fly volumes create analytics_data --region iad --size 1 -a ki-agent-rag
 
-app = "professor-pepe"
-primary_region = "fra"
+app = "ki-agent-rag"
+primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile"
