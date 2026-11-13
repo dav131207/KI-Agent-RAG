@@ -7,6 +7,7 @@ export const DEFAULT_LABELS = {
   communityart: 'Community Art',
   welcome: "Hello. I'm Professor Pepe, your AI agent. Type a command or choose one below.",
   placeholder: 'Type a command...',
+  ask: 'Ask a question...',
 }
 
 export const LABELS = {
@@ -19,6 +20,7 @@ export const LABELS = {
     communityart: 'Community Art',
     welcome: 'Hallo. Ich bin Professor Pepe, dein KI-Assistent. Tippe einen Befehl oder wähle unten einen aus.',
     placeholder: 'Befehl eingeben...',
+    ask: 'Stell deine Frage...',
   },
   Chinese: {
     getcoins: '领取免费币！',
@@ -46,6 +48,7 @@ export const LABELS = {
     socialShort: 'Crear publicación',
     welcome: 'Hola. Soy Professor Pepe, tu agente de IA. Escribe un comando o elige uno abajo.',
     placeholder: 'Escribe un comando...',
+    ask: 'Escribe tu pregunta...',
   },
   French: {
     getcoins: 'Obtenir des pièces gratuites !',
@@ -55,6 +58,7 @@ export const LABELS = {
     socialShort: 'Créer un post',
     welcome: 'Bonjour. Je suis Professor Pepe, votre agent IA. Tapez une commande ou choisissez-en une ci-dessous.',
     placeholder: 'Tapez une commande...',
+    ask: 'Posez votre question...',
   },
   Arabic: {
     getcoins: 'احصل على عملات مجانية!',

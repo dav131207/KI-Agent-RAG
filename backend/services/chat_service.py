@@ -269,8 +269,11 @@ def build_contents(
 
     if language:
         system += (
-            f"\n\nIMPORTANT: The user is located in a {language}-speaking region. "
-            f"Respond entirely in {language}, including all links and commands."
+            f"\n\nIMPORTANT: Respond entirely in {language}, including link texts. "
+            f"Write as a native {language} speaker would: compose the answer in "
+            f"{language} directly, do not translate English jokes, puns, slang or "
+            "slogans — leave them out when they do not work natively. Warm and "
+            "clear first, witty only when it is natural in that language."
         )
 
     if is_social_command(message):

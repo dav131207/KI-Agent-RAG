@@ -1,0 +1,52 @@
+# Fly.io configuration for Professor Pepe. Mirrors the Render setup in
+# render.yaml: the Dockerfile builds frontend and backend, uvicorn listens on
+# 8000, analytics and uploads live on a persistent disk at backend/data.
+#
+# Secrets are NOT in this file. Set them once with:
+#   fly secrets set GEMINI_API_KEY=... QDRANT_URL=... QDRANT_API_KEY=...
+#
+# The persistent disk is a volume; create it once in the same region before
+# the first deploy (one machine, one volume):
+#   fly volumes create analytics_data --region fra --size 1
+
+app = "professor-pepe"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PYTHONUNBUFFERED = "1"
+  # Chat is latency-critical: the lite model answers in well under a second.
+  GEMINI_MODEL = "gemini-flash-lite-latest"
+  # Social posts are generated behind a modal, so nuance beats speed there.
+  GEMINI_POST_MODEL = "gemini-3.6-flash"
+  GEMINI_EMBEDDING_MODEL = "models/gemini-embedding-001"
+  QDRANT_COLLECTION = "professor_pepe"
+  IMAGE_API_BASE = "https://onlypepes.com"
+  WATERMARK_PATH = "/app/backend/assets/watermark.png"
+  MEMES_DIR = "/app/backend/memes"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # A support chat that takes 20 seconds to wake up is a support chat nobody
+  # uses. One machine stays on; this is the price of being there.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/api/health"
+
+[mounts]
+  source = "analytics_data"
+  destination = "/app/backend/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

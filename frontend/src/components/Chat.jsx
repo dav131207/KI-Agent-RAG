@@ -11,13 +11,20 @@ import { measureLatency, trackEvent } from '../lib/analytics'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
-const COMMANDS = [
+// ?embed=1 means the chat sits inside widget.js on someone else's page, as a
+// support window. Visitors there ask questions; they do not produce social
+// posts or browse community art, so those tools and the upload button stay
+// hidden and the chat opens with a plain welcome instead of a quip.
+const EMBEDDED = new URLSearchParams(window.location.search).has('embed')
+
+const ALL_COMMANDS = [
   { id: 'getcoins', prompt: 'get coins' },
   { id: 'meme', prompt: 'random meme' },
   { id: 'rarepepe', prompt: 'rare pepe' },
-  { id: 'social', prompt: 'create social media post' },
-  { id: 'communityart', prompt: 'Community Art' },
+  { id: 'social', prompt: 'create social media post', creator: true },
+  { id: 'communityart', prompt: 'Community Art', creator: true },
 ]
+const COMMANDS = EMBEDDED ? ALL_COMMANDS.filter((c) => !c.creator) : ALL_COMMANDS
 
 export default function Chat({ isDark }) {
   const [language, setLanguage] = useState('English')
@@ -135,7 +142,14 @@ export default function Chat({ isDark }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             topic: '',
-            message: 'Generate a short initial greeting for the chat as Professor Pepe. Be completely random every time: sometimes cheeky, sometimes funny, sometimes ranting. Maximum 2 sentences. Do not mention that you are an AI.',
+            // The greeting is the first thing a visitor reads, and it arrives
+            // translated into whatever language the backend detects. A joke
+            // written for English rarely survives that, so the brief asks for
+            // a plain welcome: who you are, that you are here for questions.
+            message: EMBEDDED
+              ? 'Write a short welcome as Professor Pepe for a visitor who just opened the support chat on the Pepecoin website. One or two sentences: say who you are and that you are happy to help with questions about Pepecoin, wallets, mining and the community. No jokes, no slogans, no questions back. Do not mention that you are an AI.'
+              : 'Write a short opening line as Professor Pepe for someone who just opened the chat. One or two sentences, warm and direct, vary the wording each time. A light touch of personality is fine; no puns, no slogans, no rant. Do not mention that you are an AI.',
+
             history: [],
             stream: true,
           }),
@@ -626,6 +640,7 @@ export default function Chat({ isDark }) {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 rounded-full border px-2 sm:px-2.5 py-1.5 sm:py-2 shadow-lg transition-all duration-300 focus-within:ring-2 focus-within:ring-accent/40 focus-within:shadow-accent/20 bg-white/5 backdrop-blur-md border-white/10 focus-within:border-accent/50">
+            {!EMBEDDED && (
             <button
               type="button"
               onClick={() => setIsUploadModalOpen(true)}
@@ -635,11 +650,12 @@ export default function Chat({ isDark }) {
             >
               <Paperclip size={18} />
             </button>
+            )}
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={labels.placeholder}
+              placeholder={EMBEDDED ? (labels.ask || labels.placeholder) : labels.placeholder}
               className="flex-1 bg-transparent px-2 sm:px-3 py-1.5 sm:py-2 outline-none text-sm transition-colors min-w-0 placeholder:text-brand-500 text-brand-50"
             />
             <button

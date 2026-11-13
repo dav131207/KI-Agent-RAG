@@ -1,0 +1,48 @@
+/* Professor Pepe website widget. Loaded by widget.js from the Professor Pepe
+   origin as a stylesheet rather than injected inline, so host pages with a
+   strict Content-Security-Policy only have to allow this one origin.
+   Corner and colour come in as a class and a custom property set by widget.js. */
+.pp-widget-launcher{position:fixed;bottom:20px;z-index:2147483000;width:60px;height:60px;border-radius:50%;border:0;padding:0;cursor:pointer;background:var(--pp-color,#269a4c);box-shadow:0 8px 24px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;transition:transform .15s ease,box-shadow .15s ease}
+.pp-widget-launcher.pp-right{right:20px}
+.pp-widget-launcher.pp-left{left:20px}
+.pp-widget-launcher:hover{transform:scale(1.06);box-shadow:0 10px 28px rgba(0,0,0,.4)}
+.pp-widget-launcher img{width:44px;height:44px;object-fit:contain;pointer-events:none}
+.pp-widget-launcher .pp-x{display:none;width:22px;height:22px;color:#fff}
+.pp-widget-launcher.pp-open img{display:none}
+.pp-widget-launcher.pp-open .pp-x{display:block}
+
+/* The pulse is a ring that grows out of the button and fades, the way a
+   live-chat bubble signals "someone is here". It runs a few times after the
+   page loads and stops for good once the chat has been opened: a launcher
+   that pulses forever is noise, not an invitation. */
+.pp-widget-launcher::before{content:"";position:absolute;inset:0;border-radius:50%;background:var(--pp-color,#269a4c);opacity:0;pointer-events:none}
+.pp-widget-launcher.pp-pulse::before{animation:pp-pulse 2.4s ease-out 1s 4}
+@keyframes pp-pulse{0%{transform:scale(1);opacity:.55}70%{transform:scale(1.9);opacity:0}100%{transform:scale(1.9);opacity:0}}
+
+.pp-widget-teaser{position:fixed;bottom:30px;z-index:2147483000;max-width:min(260px,calc(100vw - 130px));padding:10px 14px;border-radius:14px;background:#fff;color:#111;font:500 14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25);cursor:pointer;border:0;text-align:left;opacity:0;transform:translateY(6px);transition:opacity .25s ease,transform .25s ease;pointer-events:none}
+.pp-widget-teaser.pp-right{right:92px}
+.pp-widget-teaser.pp-left{left:92px}
+.pp-widget-teaser.pp-show{opacity:1;transform:none;pointer-events:auto}
+.pp-widget-teaser::after{content:"";position:absolute;bottom:12px;border:6px solid transparent}
+.pp-widget-teaser.pp-right::after{right:-6px;border-left-color:#fff;border-right:0}
+.pp-widget-teaser.pp-left::after{left:-6px;border-right-color:#fff;border-left:0}
+
+.pp-widget-panel{position:fixed;bottom:92px;z-index:2147483000;width:400px;max-width:calc(100vw - 40px);height:640px;max-height:calc(100vh - 112px);border-radius:20px;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.45);background:#0a0a0a;opacity:0;transform:translateY(12px) scale(.98);pointer-events:none;transition:opacity .18s ease,transform .18s ease}
+.pp-widget-panel.pp-right{right:20px}
+.pp-widget-panel.pp-left{left:20px}
+.pp-widget-panel.pp-open{opacity:1;transform:none;pointer-events:auto}
+.pp-widget-frame{border:0;width:100%;height:100%;display:block;background:#0a0a0a;color-scheme:dark}
+.pp-widget-inline{max-height:100vh;border-radius:16px;overflow:hidden;background:#0a0a0a}
+
+@media (max-width:480px){
+  .pp-widget-panel{bottom:0;width:100vw;max-width:100vw;height:100%;max-height:100%;border-radius:0}
+  .pp-widget-panel.pp-right{right:0}
+  .pp-widget-panel.pp-left{left:0}
+  .pp-widget-launcher.pp-open{bottom:12px;width:48px;height:48px;z-index:2147483001}
+  .pp-widget-launcher.pp-open.pp-right{right:12px}
+  .pp-widget-launcher.pp-open.pp-left{left:12px}
+}
+@media (prefers-reduced-motion:reduce){
+  .pp-widget-launcher.pp-pulse::before{animation:none}
+  .pp-widget-teaser,.pp-widget-panel,.pp-widget-launcher{transition:none}
+}

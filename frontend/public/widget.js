@@ -13,6 +13,9 @@
  *   data-color="#269a4c"              launcher button colour
  *   data-open="true"                  floating only: start opened
  *   data-height="600"                 inline only: height in px (default 600)
+ *   data-pulse="false"                floating only: turn off the attention pulse
+ *   data-teaser="Questions? Ask me."  floating only: short label next to the
+ *                                     button until the chat is opened once
  *
  * The app runs inside an iframe served from the Professor Pepe origin, so
  * nothing here touches your page's styles or scripts, and nothing of your
@@ -29,6 +32,8 @@
   var mode = data.mode === 'inline' ? 'inline' : 'floating'
   var side = data.position === 'left' ? 'left' : 'right'
   var color = data.color || '#269a4c'
+  var pulse = data.pulse !== 'false'
+  var teaserText = data.teaser || ''
   var appUrl = origin + '/?embed=1'
   var logo = origin + '/logo.png'
 
@@ -38,9 +43,19 @@
     frame.title = 'Professor Pepe'
     frame.setAttribute('allow', 'clipboard-write')
     frame.setAttribute('loading', 'lazy')
-    frame.style.cssText = 'border:0;width:100%;height:100%;display:block;background:#0a0a0a;color-scheme:dark'
+    frame.className = 'pp-widget-frame'
     return frame
   }
+
+  // The CSS is a stylesheet from this origin, not an inline <style>: a host
+  // page with a strict Content-Security-Policy can allow one origin, but
+  // would have to allow 'unsafe-inline' for injected styles. Corner and
+  // colour travel as a class and a custom property, which CSP does not
+  // police (they are set through the CSSOM, not through style attributes).
+  var link = document.createElement('link')
+  link.rel = 'stylesheet'
+  link.href = origin + '/widget.css'
+  document.head.appendChild(link)
 
   // ---- inline: the app fills a container on the page ----------------------
   if (mode === 'inline') {
@@ -50,45 +65,45 @@
       script.parentNode.insertBefore(target, script)
     }
     var height = parseInt(data.height, 10) || 600
-    target.style.cssText += ';height:' + height + 'px;max-height:100vh;border-radius:16px;overflow:hidden;background:#0a0a0a'
+    target.classList.add('pp-widget-inline')
+    target.style.height = height + 'px'
     target.appendChild(makeFrame())
     window.ProfessorPepe = { mode: 'inline', open: function () {}, close: function () {}, toggle: function () {} }
     return
   }
 
   // ---- floating: a launcher button and a panel ---------------------------
-  var style = document.createElement('style')
-  style.textContent = [
-    '.pp-widget-launcher{position:fixed;bottom:20px;' + side + ':20px;z-index:2147483000;width:60px;height:60px;border-radius:50%;border:0;padding:0;cursor:pointer;background:' + color + ';box-shadow:0 8px 24px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;transition:transform .15s ease,box-shadow .15s ease}',
-    '.pp-widget-launcher:hover{transform:scale(1.06);box-shadow:0 10px 28px rgba(0,0,0,.4)}',
-    '.pp-widget-launcher img{width:44px;height:44px;object-fit:contain;pointer-events:none}',
-    '.pp-widget-launcher .pp-x{display:none;width:22px;height:22px;color:#fff}',
-    '.pp-widget-launcher.pp-open img{display:none}',
-    '.pp-widget-launcher.pp-open .pp-x{display:block}',
-    '.pp-widget-panel{position:fixed;bottom:92px;' + side + ':20px;z-index:2147483000;width:400px;max-width:calc(100vw - 40px);height:640px;max-height:calc(100vh - 112px);border-radius:20px;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.45);background:#0a0a0a;opacity:0;transform:translateY(12px) scale(.98);pointer-events:none;transition:opacity .18s ease,transform .18s ease}',
-    '.pp-widget-panel.pp-open{opacity:1;transform:none;pointer-events:auto}',
-    '@media (max-width:480px){.pp-widget-panel{bottom:0;' + side + ':0;width:100vw;max-width:100vw;height:100%;max-height:100%;border-radius:0}.pp-widget-panel.pp-open~.pp-widget-launcher,.pp-widget-launcher.pp-open{bottom:12px;' + side + ':12px;width:48px;height:48px;z-index:2147483001}}',
-  ].join('\n')
-  document.head.appendChild(style)
-
   var panel = document.createElement('div')
-  panel.className = 'pp-widget-panel'
+  panel.className = 'pp-widget-panel pp-' + side
   panel.setAttribute('role', 'dialog')
   panel.setAttribute('aria-label', 'Professor Pepe chat')
 
   var launcher = document.createElement('button')
   launcher.type = 'button'
-  launcher.className = 'pp-widget-launcher'
+  launcher.className = 'pp-widget-launcher pp-' + side + (pulse ? ' pp-pulse' : '')
+  launcher.style.setProperty('--pp-color', color)
   launcher.setAttribute('aria-label', 'Chat with Professor Pepe')
   launcher.setAttribute('aria-expanded', 'false')
   launcher.innerHTML =
     '<img src="' + logo + '" alt="">' +
     '<svg class="pp-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
 
+  var teaser = null
+  if (teaserText) {
+    teaser = document.createElement('button')
+    teaser.type = 'button'
+    teaser.className = 'pp-widget-teaser pp-' + side
+    teaser.textContent = teaserText
+    teaser.addEventListener('click', function () { open() })
+  }
+
   var isOpen = false
   var loaded = false
 
   function open() {
+    // One open is enough: the visitor knows the chat is there now.
+    launcher.classList.remove('pp-pulse')
+    if (teaser) { teaser.classList.remove('pp-show'); teaser.style.display = 'none' }
     if (!loaded) {
       // The app is only fetched when someone actually opens it: a page that
       // embeds the widget should not pay for the chat on every visit.
@@ -118,6 +133,12 @@
   function mount() {
     document.body.appendChild(panel)
     document.body.appendChild(launcher)
+    if (teaser) {
+      document.body.appendChild(teaser)
+      // Appears after the page has settled, not in the same instant as the
+      // button, so it reads as someone speaking up rather than as page chrome.
+      setTimeout(function () { if (!isOpen) teaser.classList.add('pp-show') }, 2500)
+    }
     if (data.open === 'true') open()
   }
   if (document.body) mount()
