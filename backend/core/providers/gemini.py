@@ -4,6 +4,7 @@ import asyncio
 from typing import AsyncGenerator
 
 from core.config import GEMINI_API_KEY
+from core.genai_client import make_genai_client
 from core.providers.base import LLMError, LLMProvider
 
 try:
@@ -18,7 +19,7 @@ class GeminiProvider(LLMProvider):
     def __init__(self) -> None:
         self._client = None
         if genai and GEMINI_API_KEY:
-            self._client = genai.Client(api_key=GEMINI_API_KEY)
+            self._client = make_genai_client(GEMINI_API_KEY)
 
     @property
     def is_configured(self) -> bool:

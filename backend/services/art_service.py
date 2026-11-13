@@ -18,6 +18,7 @@ from core.config import (
     GEMINI_API_KEY,
     UPLOADS_DIR as CONFIG_UPLOADS_DIR,
 )
+from core.genai_client import make_genai_client
 
 try:
     from google import genai
@@ -267,7 +268,7 @@ def describe_and_label(
         return ("Community Art", "Gemini API not configured. No description generated.", None)
 
     try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = make_genai_client(GEMINI_API_KEY)
         data, mime_type = _describable_bytes(file_path, mime_type)
         existing = all_labels() if known_labels is None else known_labels
         prompt = _DESCRIBE_PROMPT.format(

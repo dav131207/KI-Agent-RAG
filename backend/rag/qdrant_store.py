@@ -35,6 +35,7 @@ except ImportError:  # pragma: no cover
     genai = None
     types = None
 
+from core.genai_client import make_genai_client
 from rag.chunking import semantic_chunk_text
 from rag.retrieval import merge_hybrid_results, score_points_by_keyword
 
@@ -57,7 +58,7 @@ def _get_embedding_client() -> Optional[genai.Client]:  # type: ignore[valid-typ
     """Return a Gemini client for embeddings, or None if not configured."""
     global _embedding_client
     if _embedding_client is None and genai and GEMINI_API_KEY:
-        _embedding_client = genai.Client(api_key=GEMINI_API_KEY)
+        _embedding_client = make_genai_client(GEMINI_API_KEY)
     return _embedding_client
 
 
