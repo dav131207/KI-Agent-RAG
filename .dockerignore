@@ -5,8 +5,12 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+# Docker matches a bare pattern only at the root, so backend/.env* files
+# would otherwise be copied into the image by COPY backend/.
 .env
 .env.local
+**/.env
+**/.env.*
 *.log
 qdrant_storage/
 
