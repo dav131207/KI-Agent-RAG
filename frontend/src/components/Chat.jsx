@@ -147,7 +147,7 @@ export default function Chat({ isDark }) {
             // written for English rarely survives that, so the brief asks for
             // a plain welcome: who you are, that you are here for questions.
             message: EMBEDDED
-              ? 'Write a short welcome as Professor Pepe for a visitor who just opened the support chat on the Pepecoin website. One or two sentences: say who you are and that you are happy to help with questions about Pepecoin, wallets, mining and the community. No jokes, no slogans, no questions back. Do not mention that you are an AI.'
+              ? 'Write a short welcome as Professor Pepe for a visitor who just opened the support chat on the Pepecoin website. One or two sentences: say who you are and that you are happy to help with questions about Pepecoin, wallets, mining and the community. No jokes, no slogans, no questions back. Do not name any website, the chat runs on several. Do not mention that you are an AI.'
               : 'Write a short opening line as Professor Pepe for someone who just opened the chat. One or two sentences, warm and direct, vary the wording each time. A light touch of personality is fine; no puns, no slogans, no rant. Do not mention that you are an AI.',
 
             history: [],
