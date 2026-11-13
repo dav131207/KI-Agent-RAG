@@ -150,6 +150,11 @@ SCRIPT_RANGES = [
 
 # Function words, which are the part of a sentence that stays constant.
 STOPWORDS = {
+    # English earns a table of its own now that the typed message outranks
+    # geolocation: without one, an English question from a German address was
+    # undetectable and came back in German. "was" is deliberately absent, it
+    # belongs to the German set.
+    "English": {"the","is","are","what","how","where","why","which","can","should","does","do","you","your","my","this","that","with","from","have","just","about","it","to","of","and","a","an"},
     "German": {"der","die","das","und","ist","nicht","ich","du","wir","mit","auf","für","was","wie","aber","noch","schon","auch","sehr","kann","hat","wird","ein","eine","zu","von","im","bei"},
     "French": {"le","la","les","des","une","est","pas","je","tu","nous","vous","avec","pour","que","qui","mais","dans","sur","plus","très","être","fait","ça","cette"},
     "Spanish": {"el","los","las","una","es","no","yo","que","con","para","por","pero","como","más","muy","este","esta","son","tiene","hay","están"},
@@ -278,25 +283,35 @@ async def resolve_target_language(
     history: list[dict],
     request: Request,
     http_client: httpx.AsyncClient,
+    message: str = "",
 ) -> str:
-    """Pick the target language: explicit > geolocation > last user message > English."""
+    """Pick the target language: explicit > what was typed > geolocation > English.
+
+    What the visitor actually wrote outranks where they appear to be. Geo put
+    the address first, so a reader in Vienna who asked in English was answered
+    in German. Geolocation still decides whenever the text settles nothing,
+    which is most short messages and every button prompt.
+
+    ``message`` is the turn being answered. Callers pass it only when it is
+    something a person typed: a greeting brief or a social-post command is
+    English scaffolding, and letting it vote would answer a German visitor in
+    English.
+    """
     if language:
         return language
 
-    geo_language = await detect_language_from_request(request, http_client)
-    if geo_language and geo_language != "English":
-        return geo_language
+    for text in (message, _last_user_text(history)):
+        if text:
+            detected = detect_language_heuristically(text)
+            if detected:
+                return detected
 
-    # Geolocation said English, which is also what it returns when it knows
-    # nothing. The last user message decides — by inspection, not by asking a
-    # model, which used to add a full round trip ahead of every answer.
+    return await detect_language_from_request(request, http_client) or "English"
+
+
+def _last_user_text(history: list[dict]) -> str:
+    """The most recent thing the visitor typed, or an empty string."""
     for turn in reversed(history):
         if turn.get("role") == "user":
-            text = turn.get("text", "")
-            if text:
-                detected = detect_language_heuristically(text)
-                if detected:
-                    return detected
-                break
-
-    return geo_language or "English"
+            return turn.get("text", "") or ""
+    return ""

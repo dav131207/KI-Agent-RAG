@@ -11,6 +11,10 @@ class ChatRequest(BaseModel):
     history: list[dict] = Field(default_factory=list, description="Previous turns")
     stream: bool = Field(default=True, description="Stream the response")
     use_rag: bool = Field(default=True, description="Use Qdrant RAG context")
+    greeting: bool = Field(
+        default=False,
+        description="Opening greeting: the brief is English scaffolding, so it must not pick the language",
+    )
 
 
 class ImageRequest(BaseModel):

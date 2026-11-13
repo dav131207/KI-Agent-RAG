@@ -152,6 +152,7 @@ export default function Chat({ isDark }) {
 
             history: [],
             stream: true,
+            greeting: true,
           }),
         })
         if (!response.ok) return

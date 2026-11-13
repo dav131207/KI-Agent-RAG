@@ -340,8 +340,12 @@ async def chat(req: ChatRequest, request: Request):
 
     mark("analytics")
 
+    # The greeting brief and the social-post command are English instructions
+    # the frontend writes, not words from the visitor, so they do not get to
+    # pick the language.
+    typed = "" if (req.greeting or is_social_command(req.message)) else req.message
     target_language = await resolve_target_language(
-        None, req.history, request, http
+        None, req.history, request, http, typed
     )
     mark("language")
 
