@@ -24,7 +24,8 @@ const ALL_COMMANDS = [
   { id: 'social', prompt: 'create social media post', creator: true },
   { id: 'communityart', prompt: 'Community Art', creator: true },
 ]
-const COMMANDS = EMBEDDED ? ALL_COMMANDS.filter((c) => !c.creator) : ALL_COMMANDS
+// Widget (embed) shows only the Free Coins shortcut
+const COMMANDS = EMBEDDED ? ALL_COMMANDS.filter((c) => c.id === 'getcoins') : ALL_COMMANDS
 
 export default function Chat({ isDark }) {
   const [language, setLanguage] = useState('English')
